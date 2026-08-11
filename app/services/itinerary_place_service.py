@@ -2,6 +2,7 @@ from typing import Optional
 from uuid import UUID
 
 from fastapi import HTTPException, status
+from sqlalchemy.exc import IntegrityError
 
 from app.models.itinerary_place import ItineraryPlace
 from app.models.place import Place
@@ -30,7 +31,12 @@ class ItineraryPlaceService:
         )
 
     async def add_place_to_itinerary(
-        self, itinerary_id: UUID, place_id: str
+        self,
+        itinerary_id: UUID,
+        place_id: str,
+        day: Optional[int] = None,
+        time_slot: Optional[str] = None,
+        order_in_day: Optional[int] = None,
     ) -> ItineraryPlace:
         itinerary = await self.repo.get_itinerary(itinerary_id)
         if itinerary is None:
@@ -53,7 +59,31 @@ class ItineraryPlaceService:
                 status_code=status.HTTP_409_CONFLICT, detail="이미 담긴 장소입니다."
             )
 
-        return await self.repo.create_itinerary_place(itinerary_id, place_id)
+        if day is not None and time_slot is not None and order_in_day is not None:
+            slot_conflict = await self.repo.get_itinerary_place_by_slot(
+                itinerary_id, day, time_slot, order_in_day
+            )
+            if slot_conflict is not None:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail="이미 해당 시간대에 다른 장소가 배치되어 있습니다.",
+                )
+
+        try:
+            return await self.repo.create_itinerary_place(
+                itinerary_id,
+                place_id,
+                day=day,
+                time_slot=time_slot,
+                order_in_day=order_in_day,
+            )
+        except IntegrityError:
+            # 사전 체크와 실제 insert 사이 경합(race condition)으로
+            # unique 제약을 위반한 경우의 안전망
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="이미 담겼거나 같은 시간대에 다른 장소가 배치되어 있습니다.",
+            )
 
     async def remove_place_from_itinerary(
         self, itinerary_id: UUID, itinerary_place_id: UUID
