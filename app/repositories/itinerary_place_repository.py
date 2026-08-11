@@ -2,6 +2,7 @@ from typing import Optional
 from uuid import UUID
 
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.itinerary import Itinerary
@@ -69,13 +70,49 @@ class ItineraryPlaceRepository:
         )
         return result.scalar_one_or_none()
 
+    async def get_itinerary_place_by_slot(
+        self, itinerary_id: UUID, day: int, time_slot: str, order_in_day: int
+    ) -> Optional[ItineraryPlace]:
+        """같은 슬롯(day, time_slot, order_in_day)에 이미 배치된 장소가 있는지 확인
+        (uq_itinerary_places_slot 사전 체크용)"""
+        result = await self.db.execute(
+            select(ItineraryPlace).where(
+                ItineraryPlace.itinerary_id == itinerary_id,
+                ItineraryPlace.day == day,
+                ItineraryPlace.time_slot == time_slot,
+                ItineraryPlace.order_in_day == order_in_day,
+            )
+        )
+        return result.scalar_one_or_none()
+
     async def create_itinerary_place(
-        self, itinerary_id: UUID, place_id: str
+        self,
+        itinerary_id: UUID,
+        place_id: str,
+        day: Optional[int] = None,
+        time_slot: Optional[str] = None,
+        order_in_day: Optional[int] = None,
     ) -> ItineraryPlace:
-        """day/time_slot/order_in_day는 NULL(스케줄 미배치)로 생성"""
-        itinerary_place = ItineraryPlace(itinerary_id=itinerary_id, place_id=place_id)
+        """day/time_slot/order_in_day를 같이 주면 배치된 상태로,
+        생략하면 NULL(스케줄 미배치) 상태로 생성.
+
+        사전에 서비스 레이어에서 중복 체크를 하더라도, 동시 요청 경합 상황을
+        대비해 unique 제약(uq_itinerary_places_place, uq_itinerary_places_slot)
+        위반 시 rollback 후 IntegrityError를 그대로 전파한다 - 서비스가 409로 변환.
+        """
+        itinerary_place = ItineraryPlace(
+            itinerary_id=itinerary_id,
+            place_id=place_id,
+            day=day,
+            time_slot=time_slot,
+            order_in_day=order_in_day,
+        )
         self.db.add(itinerary_place)
-        await self.db.commit()
+        try:
+            await self.db.commit()
+        except IntegrityError:
+            await self.db.rollback()
+            raise
         await self.db.refresh(itinerary_place)
         return itinerary_place
 
