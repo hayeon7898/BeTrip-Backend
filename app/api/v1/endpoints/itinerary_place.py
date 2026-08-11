@@ -46,8 +46,18 @@ async def add_place(
     payload: ItineraryPlaceCreateRequest,
     service: ItineraryPlaceService = Depends(get_itinerary_place_service),
 ) -> ItineraryPlaceResponse:
-    """일정에 장소를 담는다. day/time_slot/order_in_day는 아직 NULL(미배치)."""
-    return await service.add_place_to_itinerary(itinerary_id, payload.place_id)
+    """일정에 장소를 담는다.
+
+    payload에 day/time_slot/order_in_day가 없으면 미배치(NULL) 상태로,
+    있으면 배치된 상태로 생성한다 (PlanPage에서 특정 슬롯에 바로 담을 때 사용).
+    """
+    return await service.add_place_to_itinerary(
+        itinerary_id,
+        payload.place_id,
+        day=payload.day,
+        time_slot=payload.time_slot,
+        order_in_day=payload.order_in_day,
+    )
 
 
 @router.delete(
