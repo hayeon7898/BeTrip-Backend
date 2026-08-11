@@ -43,6 +43,7 @@ class TestCreateItinerary:
         assert created_itinerary.transportation == "CAR"
         assert created_itinerary.purpose == "FAMILY"
         assert created_itinerary.styles == ["NATURE", "FOOD"]
+        assert created_itinerary.title == "제주도 3박4일"
 
     async def test_create_success_with_optional_fields_omitted(
         self, mock_itinerary_repo, sample_user_id
@@ -115,6 +116,62 @@ class TestGetItineraryDetail:
         assert len(result.places) == 1
         assert result.places[0].place_id == "123"
         assert result.conditions.region == "제주도"
+
+    async def test_get_detail_generated_status_builds_schedule_from_places(
+        self,
+        mock_itinerary_repo,
+        sample_itinerary,
+        sample_place,
+        sample_itinerary_place,
+        sample_user_id,
+    ):
+        sample_itinerary.status = "GENERATED"
+        mock_itinerary_repo.find_by_id.return_value = sample_itinerary
+        mock_itinerary_repo.find_places.return_value = [
+            (sample_itinerary_place, sample_place)
+        ]
+
+        service = ItineraryService(mock_itinerary_repo)
+        result = await service.get_itinerary_detail(
+            sample_user_id, sample_itinerary.itinerary_id
+        )
+
+        assert result.schedule is not None
+        trip_days = (sample_itinerary.end_date - sample_itinerary.start_date).days + 1
+        assert len(result.schedule.days) == trip_days
+        day_1 = result.schedule.days[0]
+        assert day_1.day == 1
+        assert len(day_1.items) == 1
+        assert day_1.items[0].place_id == "123"
+        assert day_1.items[0].time_slot == "LUNCH"
+
+    async def test_get_detail_draft_status_with_unplaced_places_returns_null_fields(
+        self,
+        mock_itinerary_repo,
+        sample_itinerary,
+        sample_place,
+        sample_user_id,
+    ):
+        """담기만 하고 아직 generate 전인 상태 - #7에서 500 나던 케이스."""
+        from app.models.itinerary_place import ItineraryPlace
+
+        unplaced = ItineraryPlace(
+            itinerary_place_id=uuid.uuid4(),
+            itinerary_id=sample_itinerary.itinerary_id,
+            place_id="123",
+        )
+        mock_itinerary_repo.find_by_id.return_value = sample_itinerary
+        mock_itinerary_repo.find_places.return_value = [(unplaced, sample_place)]
+
+        service = ItineraryService(mock_itinerary_repo)
+        result = await service.get_itinerary_detail(
+            sample_user_id, sample_itinerary.itinerary_id
+        )
+
+        assert result.schedule is None
+        assert result.places[0].day is None
+        assert result.places[0].time_slot is None
+        assert result.places[0].order_in_day is None
 
     async def test_get_detail_no_places_returns_empty_list_and_null_schedule(
         self, mock_itinerary_repo, sample_itinerary, sample_user_id

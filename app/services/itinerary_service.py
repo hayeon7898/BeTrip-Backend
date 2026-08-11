@@ -1,8 +1,12 @@
+from collections import defaultdict
+from datetime import timedelta
 from uuid import UUID
 
 from fastapi import HTTPException, status
 
 from app.models.itinerary import Itinerary
+from app.models.itinerary_place import ItineraryPlace
+from app.models.place import Place
 from app.repositories.itinerary_repository import ItineraryRepository
 from app.schemas.itinerary import (
     ItineraryConditionsRequest,
@@ -11,7 +15,11 @@ from app.schemas.itinerary import (
     ItineraryDetailResponse,
     ItineraryPlaceResponse,
     ItinerarySummaryResponse,
+    ScheduleDayResponse,
+    ScheduleItemResponse,
+    ScheduleResponse,
 )
+from app.utils.itinerary_title import generate_itinerary_title
 from app.utils.region_thumbnail import get_region_thumbnail
 
 
@@ -24,6 +32,7 @@ class ItineraryService:
     ) -> ItineraryCreateResponse:
         itinerary = Itinerary(
             user_id=user_id,
+            title=generate_itinerary_title(req.region, req.start_date, req.end_date),
             status="DRAFT",
             region=req.region,
             start_date=req.start_date,
@@ -77,14 +86,54 @@ class ItineraryService:
             for itinerary_place, place in place_rows
         ]
 
+        schedule = None
+        if itinerary.status in ("GENERATED", "SAVED"):
+            schedule = self._build_schedule(itinerary, place_rows)
+
         return ItineraryDetailResponse(
             itinerary_id=itinerary.itinerary_id,
             status=itinerary.status,
             conditions=ItineraryConditionsResponse.model_validate(itinerary),
             places=places,
-            schedule=None,  # 자동생성(13번)/저장(15번) API 미구현 — 항상 null
+            schedule=schedule,
             updated_at=itinerary.updated_at,
         )
+
+    def _build_schedule(
+        self,
+        itinerary: Itinerary,
+        place_rows: list[tuple[ItineraryPlace, Place]],
+    ) -> ScheduleResponse:
+        """day별로 그룹핑해 ScheduleResponse를 조립한다.
+
+        place_rows는 이미 day/time_slot/order_in_day 기준으로 정렬되어 있다
+        (ItineraryRepository.find_places).
+        """
+        items_by_day: dict[int, list[ScheduleItemResponse]] = defaultdict(list)
+        for itinerary_place, place in place_rows:
+            if itinerary_place.day is None:
+                continue
+            items_by_day[itinerary_place.day].append(
+                ScheduleItemResponse(
+                    place_id=place.place_id,
+                    name=place.name,
+                    time_slot=itinerary_place.time_slot,
+                    start_time=itinerary_place.start_time,
+                    order_in_day=itinerary_place.order_in_day,
+                    travel_time_to_next_min=itinerary_place.travel_time_to_next_min,
+                )
+            )
+
+        num_days = (itinerary.end_date - itinerary.start_date).days + 1
+        days = [
+            ScheduleDayResponse(
+                day=day,
+                date=itinerary.start_date + timedelta(days=day - 1),
+                items=items_by_day.get(day, []),
+            )
+            for day in range(1, num_days + 1)
+        ]
+        return ScheduleResponse(days=days)
 
     async def delete_itinerary(self, user_id: UUID, itinerary_id: UUID) -> None:
         itinerary = await self._get_owned_itinerary(user_id, itinerary_id)

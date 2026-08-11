@@ -5,32 +5,13 @@ from fastapi import APIRouter, Depends, status
 from app.api.v1.endpoints.itineraries.deps import get_itinerary_service
 from app.core.deps import get_current_user
 from app.models.user import User
-from app.schemas.itinerary import (
-    ItineraryConditionsRequest,
-    ItineraryCreateResponse,
-    ItineraryDetailResponse,
-    ItineraryListResponse,
-)
+from app.schemas.itinerary import ItineraryDetailResponse, ItineraryListResponse
 from app.services.itinerary_service import ItineraryService
 
 router = APIRouter(prefix="/itineraries", tags=["itineraries"])
 
 
-@router.post(
-    "/conditions",
-    response_model=ItineraryCreateResponse,
-    status_code=status.HTTP_201_CREATED,
-    summary="여행 조건 입력 → 일정 생성",
-)
-async def create_itinerary(
-    req: ItineraryConditionsRequest,
-    current_user: User = Depends(get_current_user),
-    service: ItineraryService = Depends(get_itinerary_service),
-):
-    return await service.create_itinerary(current_user.user_id, req)
-
-
-@router.get("", response_model=ItineraryListResponse, summary="내 일정 목록 조회")
+@router.get("", response_model=ItineraryListResponse, summary="List My Itineraries")
 async def list_itineraries(
     current_user: User = Depends(get_current_user),
     service: ItineraryService = Depends(get_itinerary_service),
@@ -42,7 +23,7 @@ async def list_itineraries(
 @router.get(
     "/{itinerary_id}",
     response_model=ItineraryDetailResponse,
-    summary="일정 상세 조회",
+    summary="Get Itinerary Detail",
 )
 async def get_itinerary_detail(
     itinerary_id: UUID,
@@ -53,7 +34,9 @@ async def get_itinerary_detail(
 
 
 @router.delete(
-    "/{itinerary_id}", status_code=status.HTTP_204_NO_CONTENT, summary="일정 삭제"
+    "/{itinerary_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Delete Itinerary",
 )
 async def delete_itinerary(
     itinerary_id: UUID,

@@ -1,6 +1,6 @@
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict
 
 PlaceCategory = Literal["RESTAURANT", "CAFE", "ACTIVITY"]
 
@@ -12,16 +12,16 @@ class PlaceDetailResponse(BaseModel):
     클라이언트가 웹뷰/iframe으로 열어서 보여주는 방식으로 대체한다.
     """
 
-    model_config = ConfigDict(from_attributes=True, populate_by_name=True)
+    model_config = ConfigDict(from_attributes=True)
 
-    place_id: str = Field(alias="placeId")
+    place_id: str
     name: str
     category: PlaceCategory
     address: str | None = None
     lat: float
     lng: float
-    place_url: str = Field(alias="placeUrl")
-    thumbnail_url: str | None = Field(default=None, alias="thumbnailUrl")
+    place_url: str
+    thumbnail_url: str | None = None
 
 
 class KakaoPlaceRaw(BaseModel):

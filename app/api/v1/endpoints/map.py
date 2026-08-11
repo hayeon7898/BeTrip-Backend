@@ -1,16 +1,41 @@
 from fastapi import APIRouter, Depends, Query
+from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.v1.endpoints.map.deps import get_place_service
-from app.schemas.place import PlaceCategory, PlaceSearchResponse
+from app.core.kakao_client import KakaoMapClient, KakaoMobilityClient
+from app.db.session import get_db
+from app.repositories.place_repository import PlaceRepository
+from app.schemas.place import PlaceCategory, PlaceDetailResponse, PlaceSearchResponse
+from app.schemas.transit import TransitMode, TransitResponse
 from app.services.place_service import PlaceService
+from app.services.transit_service import TransitService
 
-router = APIRouter()
+router = APIRouter(prefix="/map", tags=["map"])
+
+
+def get_place_service(db: AsyncSession = Depends(get_db)) -> PlaceService:
+    return PlaceService(PlaceRepository(db), KakaoMapClient())
+
+
+def get_transit_service(db: AsyncSession = Depends(get_db)) -> TransitService:
+    return TransitService(PlaceRepository(db), KakaoMapClient(), KakaoMobilityClient())
+
+
+@router.get(
+    "/places/{place_id}",
+    response_model=PlaceDetailResponse,
+    summary="Get Place Detail",
+)
+async def get_place_detail(
+    place_id: str,
+    service: PlaceService = Depends(get_place_service),
+):
+    return await service.get_place_detail(place_id)
 
 
 @router.get(
     "/search",
     response_model=PlaceSearchResponse,
-    summary="지도 검색",
+    summary="Search Places",
     description=(
         "**q 또는 category 중 하나는 반드시 있어야 함** — 둘 다 없으면 422.\n\n"
         "- `q`만 사용: 키워드 검색. 위치(x/y/radius, rect)는 선택 — "
@@ -38,3 +63,13 @@ async def search_places(
     service: PlaceService = Depends(get_place_service),
 ):
     return await service.search_places(q, x, y, radius, rect, category)
+
+
+@router.get("/transit", response_model=TransitResponse, summary="Calculate Travel Time")
+async def get_transit(
+    from_place_id: str = Query(alias="from", description="출발지 place_id"),
+    to_place_id: str = Query(alias="to", description="도착지 place_id"),
+    mode: TransitMode = Query(description="CAR 또는 WALK"),
+    service: TransitService = Depends(get_transit_service),
+):
+    return await service.get_transit(from_place_id, to_place_id, mode)

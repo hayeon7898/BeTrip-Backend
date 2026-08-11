@@ -5,6 +5,15 @@ from fastapi import FastAPI
 from app.api.v1.router import api_router as v1_router
 from app.core.config import settings
 
+OPENAPI_TAGS = [
+    {"name": "auth"},
+    {"name": "itineraries"},
+    {"name": "itinerary_conditions"},
+    {"name": "itinerary_places"},
+    {"name": "itinerary_plans"},
+    {"name": "map"},
+]
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -15,6 +24,7 @@ app = FastAPI(
     title=settings.APP_NAME,
     version=settings.APP_VERSION,
     lifespan=lifespan,
+    openapi_tags=OPENAPI_TAGS,
 )
 
 app.include_router(v1_router, prefix="/api/v1")
