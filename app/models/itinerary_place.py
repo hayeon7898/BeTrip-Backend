@@ -34,6 +34,13 @@ class ItineraryPlace(Base):
         ),
         CheckConstraint("day >= 1", name="chk_itinerary_places_day"),
         UniqueConstraint("itinerary_id", "place_id", name="uq_itinerary_places_place"),
+        UniqueConstraint(
+            "itinerary_id",
+            "day",
+            "time_slot",
+            "order_in_day",
+            name="uq_itinerary_places_slot",
+        ),
         Index(
             "idx_itinerary_places_order",
             "itinerary_id",
