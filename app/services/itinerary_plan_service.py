@@ -9,12 +9,11 @@ from app.models.itinerary_place import ItineraryPlace
 from app.models.place import Place
 from app.repositories.itinerary_repository import ItineraryRepository
 from app.schemas.itinerary import (
-    PlanGenerateResponse,
-    PlanSaveResponse,
     ScheduleDayResponse,
     ScheduleItemResponse,
     ScheduleResponse,
 )
+from app.schemas.plan import PlanGenerateResponse, PlanSaveResponse
 from app.utils.itinerary_planner import (
     PlaceCoord,
     assign_time_slots,

@@ -115,6 +115,11 @@ class TestGetItineraryDetail:
         assert result.schedule is None
         assert len(result.places) == 1
         assert result.places[0].place_id == "123"
+        assert (
+            result.places[0].itinerary_place_id
+            == sample_itinerary_place.itinerary_place_id
+        )
+        assert result.places[0].address == sample_place.address
         assert result.conditions.region == "제주도"
 
     async def test_get_detail_generated_status_builds_schedule_from_places(

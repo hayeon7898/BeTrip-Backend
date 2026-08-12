@@ -82,9 +82,12 @@ class ItineraryConditionsResponse(BaseModel):
 
 
 class ItineraryPlaceResponse(BaseModel):
+    itinerary_place_id: UUID
     place_id: str
     name: str
     category: PlaceCategory
+    address: str | None
+    thumbnail_url: str | None
     day: int | None
     time_slot: TimeSlot | None
     order_in_day: int | None
@@ -118,15 +121,3 @@ class ItineraryDetailResponse(BaseModel):
     places: list[ItineraryPlaceResponse]
     schedule: ScheduleResponse | None
     updated_at: datetime
-
-
-class PlanGenerateResponse(BaseModel):
-    itinerary_id: UUID
-    status: ItineraryStatus
-    schedule: ScheduleResponse | None
-
-
-class PlanSaveResponse(BaseModel):
-    itinerary_id: UUID
-    status: ItineraryStatus
-    saved_at: datetime

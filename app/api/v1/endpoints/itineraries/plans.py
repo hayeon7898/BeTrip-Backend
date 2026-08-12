@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends
 from app.api.v1.endpoints.itineraries.deps import get_itinerary_plan_service
 from app.core.deps import get_current_user
 from app.models.user import User
-from app.schemas.itinerary import PlanGenerateResponse, PlanSaveResponse
+from app.schemas.plan import PlanGenerateResponse, PlanSaveResponse
 from app.services.itinerary_plan_service import ItineraryPlanService
 
 router = APIRouter(prefix="/itineraries/{itinerary_id}/plans", tags=["itinerary_plans"])

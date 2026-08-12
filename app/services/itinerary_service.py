@@ -74,9 +74,12 @@ class ItineraryService:
 
         places = [
             ItineraryPlaceResponse(
+                itinerary_place_id=itinerary_place.itinerary_place_id,
                 place_id=place.place_id,
                 name=place.name,
                 category=place.category,
+                address=place.address,
+                thumbnail_url=place.thumbnail_url,
                 day=itinerary_place.day,
                 time_slot=itinerary_place.time_slot,
                 order_in_day=itinerary_place.order_in_day,
