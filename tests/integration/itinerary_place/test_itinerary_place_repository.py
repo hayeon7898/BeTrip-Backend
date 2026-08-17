@@ -228,7 +228,7 @@ async def test_find_day_places_ordered_orders_by_order_in_day_within_slot(
 
 
 @pytest.mark.asyncio
-async def test_update_travel_times_persists_multiple_rows_in_one_call(
+async def test_update_day_schedule_persists_travel_and_start_times_in_one_call(
     db_session, sample_itinerary, sample_place
 ):
     repo = ItineraryPlaceRepository(db_session)
@@ -252,9 +252,14 @@ async def test_update_travel_times_persists_multiple_rows_in_one_call(
         order_in_day=1,
     )
 
-    await repo.update_travel_times([(ip_a, 12), (ip_b, None)])
+    await repo.update_day_schedule(
+        [(ip_a, 12), (ip_b, None)],
+        [(ip_a, "09:00"), (ip_b, "12:00")],
+    )
 
     refreshed_a = await repo.get_itinerary_place(ip_a.itinerary_place_id)
     refreshed_b = await repo.get_itinerary_place(ip_b.itinerary_place_id)
     assert refreshed_a.travel_time_to_next_min == 12
+    assert refreshed_a.start_time == "09:00"
     assert refreshed_b.travel_time_to_next_min is None
+    assert refreshed_b.start_time == "12:00"

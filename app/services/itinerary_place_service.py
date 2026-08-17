@@ -9,6 +9,7 @@ from app.models.itinerary import Itinerary
 from app.models.itinerary_place import ItineraryPlace
 from app.models.place import Place
 from app.repositories.itinerary_place_repository import ItineraryPlaceRepository
+from app.utils.itinerary_planner import PlaceCoord, compute_start_times
 
 
 class ItineraryPlaceService:
@@ -95,11 +96,14 @@ class ItineraryPlaceService:
             )
 
         # day/time_slot/order_in_day가 함께 왔을 때(=PlanPage에서 바로 배치)만
-        # 인접 구간 이동시간을 계산해서 같은 흐름으로 반영한다. PlacePage처럼
-        # 미배치 상태로 담기만 하는 경우(day=None)는 "인접 구간"이라는 개념이
-        # 없으므로 자연히 스킵된다.
+        # 인접 구간 이동시간·하루 전체 시작시각을 계산해서 같은 흐름으로 반영한다.
+        # PlacePage처럼 미배치 상태로 담기만 하는 경우(day=None)는 "일정"이라는
+        # 개념이 없으므로 자연히 스킵된다.
         if day is not None:
-            await self._recalculate_travel_times_after_add(itinerary, created)
+            await self._recalculate_day_schedule_after_add(itinerary, created)
+            # update_day_schedule의 커밋으로 updated_at이 서버에서 재계산돼
+            # expire되므로, 응답 직렬화 전에 최신 값을 동기적으로 채워둔다.
+            await self.repo.refresh_itinerary_place(created)
 
         return created
 
@@ -114,7 +118,8 @@ class ItineraryPlaceService:
             )
 
         day = itinerary_place.day
-        pending_update: Optional[tuple[ItineraryPlace, Optional[int]]] = None
+        travel_updates: list[tuple[ItineraryPlace, Optional[int]]] = []
+        start_time_updates: list[tuple[ItineraryPlace, str]] = []
 
         if day is not None:
             itinerary = await self.repo.get_itinerary(itinerary_id)
@@ -139,14 +144,20 @@ class ItineraryPlaceService:
                     # 삭제되는 항목이 그 날의 마지막이었으면, 이전 항목도 이제
                     # 마지막이 되므로 다음 구간 이동시간을 비운다.
                     minutes = None
-                pending_update = (prev_ip, minutes)
+                prev_ip.travel_time_to_next_min = minutes
+                travel_updates.append((prev_ip, minutes))
+
+            # 삭제된 항목이 빠지면 그 뒤 항목들의 시작시각이 전부 당겨질 수 있으므로
+            # 남는 항목 전체를 기준으로 하루 시작시각을 다시 계산한다.
+            remaining = [entry for i, entry in enumerate(day_places) if i != index]
+            start_time_updates = self._compute_start_time_updates(remaining)
 
         await self.repo.delete_itinerary_place(itinerary_place)
 
-        if pending_update is not None:
-            await self.repo.update_travel_times([pending_update])
+        if day is not None:
+            await self.repo.update_day_schedule(travel_updates, start_time_updates)
 
-    async def _recalculate_travel_times_after_add(
+    async def _recalculate_day_schedule_after_add(
         self, itinerary: Itinerary, created: ItineraryPlace
     ) -> None:
         day_places = await self.repo.find_day_places_ordered(
@@ -158,7 +169,7 @@ class ItineraryPlaceService:
             if ip.itinerary_place_id == created.itinerary_place_id
         )
         mode = "CAR" if itinerary.transportation == "CAR" else "WALK"
-        updates: list[tuple[ItineraryPlace, Optional[int]]] = []
+        travel_updates: list[tuple[ItineraryPlace, Optional[int]]] = []
 
         if index > 0:
             prev_ip, prev_place = day_places[index - 1]
@@ -166,7 +177,8 @@ class ItineraryPlaceService:
             minutes = await self._try_compute_segment_minutes(
                 prev_place, new_place, mode
             )
-            updates.append((prev_ip, minutes))
+            prev_ip.travel_time_to_next_min = minutes
+            travel_updates.append((prev_ip, minutes))
 
         if index < len(day_places) - 1:
             _, new_place = day_places[index]
@@ -174,9 +186,36 @@ class ItineraryPlaceService:
             minutes = await self._try_compute_segment_minutes(
                 new_place, next_place, mode
             )
-            updates.append((created, minutes))
+            created.travel_time_to_next_min = minutes
+            travel_updates.append((created, minutes))
 
-        await self.repo.update_travel_times(updates)
+        # 삽입 위치 때문에 뒤 항목들의 시작시각도 밀릴 수 있으므로 하루 전체를
+        # 기준으로 다시 계산한다 (자동생성 때와 같은 compute_start_times 재사용).
+        start_time_updates = self._compute_start_time_updates(day_places)
+        await self.repo.update_day_schedule(travel_updates, start_time_updates)
+
+    @staticmethod
+    def _compute_start_time_updates(
+        day_places: list[tuple[ItineraryPlace, Place]],
+    ) -> list[tuple[ItineraryPlace, str]]:
+        """day_places 순서(하루 시간 순)를 기준으로, 이미 반영된
+        travel_time_to_next_min 값을 그대로 사용해 시작시각을 다시 계산한다."""
+        if not day_places:
+            return []
+        slotted = [
+            (
+                PlaceCoord(
+                    key=str(ip.itinerary_place_id), lat=place.lat, lng=place.lng
+                ),
+                ip.time_slot,
+            )
+            for ip, place in day_places
+        ]
+        travel_minutes = [ip.travel_time_to_next_min for ip, _ in day_places]
+        start_times = compute_start_times(slotted, travel_minutes)
+        return [
+            (ip, start_time) for (ip, _), start_time in zip(day_places, start_times)
+        ]
 
     async def _try_compute_segment_minutes(
         self, origin: Place, destination: Place, mode: str

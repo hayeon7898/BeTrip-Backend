@@ -128,6 +128,13 @@ class ItineraryPlaceRepository:
     ) -> Optional[ItineraryPlace]:
         return await self.db.get(ItineraryPlace, itinerary_place_id)
 
+    async def refresh_itinerary_place(self, itinerary_place: ItineraryPlace) -> None:
+        """update_day_schedule -> onupdate(updated_at)가 서버에서
+        재계산된 뒤, 응답으로 내려갈 객체를 최신 상태로 다시 읽어온다.
+        (안 하면 expired 컬럼에 대한 동기 접근이 비동기 컨텍스트 밖에서
+        일어나 MissingGreenlet 에러 발생)"""
+        await self.db.refresh(itinerary_place)
+
     async def delete_itinerary_place(self, itinerary_place: ItineraryPlace) -> None:
         await self.db.delete(itinerary_place)
         await self.db.commit()
@@ -148,12 +155,17 @@ class ItineraryPlaceRepository:
         )
         return [(row[0], row[1]) for row in result.all()]
 
-    async def update_travel_times(
-        self, updates: list[tuple[ItineraryPlace, Optional[int]]]
+    async def update_day_schedule(
+        self,
+        travel_updates: list[tuple[ItineraryPlace, Optional[int]]],
+        start_time_updates: list[tuple[ItineraryPlace, str]],
     ) -> None:
-        """여러 itinerary_place의 travel_time_to_next_min을 한 트랜잭션으로 갱신한다."""
-        if not updates:
+        """담기/삭제로 바뀐 인접 구간 이동시간과, 그로 인해 밀리는 하루 전체의
+        시작시각을 한 트랜잭션으로 갱신한다."""
+        if not travel_updates and not start_time_updates:
             return
-        for itinerary_place, minutes in updates:
+        for itinerary_place, minutes in travel_updates:
             itinerary_place.travel_time_to_next_min = minutes
+        for itinerary_place, start_time in start_time_updates:
+            itinerary_place.start_time = start_time
         await self.db.commit()
