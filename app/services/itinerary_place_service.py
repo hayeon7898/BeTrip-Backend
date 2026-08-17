@@ -4,14 +4,23 @@ from uuid import UUID
 from fastapi import HTTPException, status
 from sqlalchemy.exc import IntegrityError
 
+from app.core.kakao_client import KakaoMapClient, KakaoMobilityClient
+from app.models.itinerary import Itinerary
 from app.models.itinerary_place import ItineraryPlace
 from app.models.place import Place
 from app.repositories.itinerary_place_repository import ItineraryPlaceRepository
 
 
 class ItineraryPlaceService:
-    def __init__(self, repo: ItineraryPlaceRepository):
+    def __init__(
+        self,
+        repo: ItineraryPlaceRepository,
+        kakao_map_client: KakaoMapClient,
+        kakao_mobility_client: KakaoMobilityClient,
+    ):
         self.repo = repo
+        self.kakao_map_client = kakao_map_client
+        self.kakao_mobility_client = kakao_mobility_client
 
     async def get_place_recommendations(
         self, itinerary_id: UUID, category: Optional[str] = None
@@ -70,7 +79,7 @@ class ItineraryPlaceService:
                 )
 
         try:
-            return await self.repo.create_itinerary_place(
+            created = await self.repo.create_itinerary_place(
                 itinerary_id,
                 place_id,
                 day=day,
@@ -85,6 +94,15 @@ class ItineraryPlaceService:
                 detail="이미 담겼거나 같은 시간대에 다른 장소가 배치되어 있습니다.",
             )
 
+        # day/time_slot/order_in_day가 함께 왔을 때(=PlanPage에서 바로 배치)만
+        # 인접 구간 이동시간을 계산해서 같은 흐름으로 반영한다. PlacePage처럼
+        # 미배치 상태로 담기만 하는 경우(day=None)는 "인접 구간"이라는 개념이
+        # 없으므로 자연히 스킵된다.
+        if day is not None:
+            await self._recalculate_travel_times_after_add(itinerary, created)
+
+        return created
+
     async def remove_place_from_itinerary(
         self, itinerary_id: UUID, itinerary_place_id: UUID
     ) -> None:
@@ -95,4 +113,85 @@ class ItineraryPlaceService:
                 detail="담긴 장소를 찾을 수 없습니다.",
             )
 
+        day = itinerary_place.day
+        pending_update: Optional[tuple[ItineraryPlace, Optional[int]]] = None
+
+        if day is not None:
+            itinerary = await self.repo.get_itinerary(itinerary_id)
+            day_places = await self.repo.find_day_places_ordered(itinerary_id, day)
+            index = next(
+                i
+                for i, (ip, _) in enumerate(day_places)
+                if ip.itinerary_place_id == itinerary_place_id
+            )
+            prev_entry = day_places[index - 1] if index > 0 else None
+            next_entry = day_places[index + 1] if index < len(day_places) - 1 else None
+
+            if prev_entry is not None:
+                prev_ip, prev_place = prev_entry
+                if next_entry is not None:
+                    _, next_place = next_entry
+                    mode = "CAR" if itinerary.transportation == "CAR" else "WALK"
+                    minutes = await self._try_compute_segment_minutes(
+                        prev_place, next_place, mode
+                    )
+                else:
+                    # 삭제되는 항목이 그 날의 마지막이었으면, 이전 항목도 이제
+                    # 마지막이 되므로 다음 구간 이동시간을 비운다.
+                    minutes = None
+                pending_update = (prev_ip, minutes)
+
         await self.repo.delete_itinerary_place(itinerary_place)
+
+        if pending_update is not None:
+            await self.repo.update_travel_times([pending_update])
+
+    async def _recalculate_travel_times_after_add(
+        self, itinerary: Itinerary, created: ItineraryPlace
+    ) -> None:
+        day_places = await self.repo.find_day_places_ordered(
+            itinerary.itinerary_id, created.day
+        )
+        index = next(
+            i
+            for i, (ip, _) in enumerate(day_places)
+            if ip.itinerary_place_id == created.itinerary_place_id
+        )
+        mode = "CAR" if itinerary.transportation == "CAR" else "WALK"
+        updates: list[tuple[ItineraryPlace, Optional[int]]] = []
+
+        if index > 0:
+            prev_ip, prev_place = day_places[index - 1]
+            _, new_place = day_places[index]
+            minutes = await self._try_compute_segment_minutes(
+                prev_place, new_place, mode
+            )
+            updates.append((prev_ip, minutes))
+
+        if index < len(day_places) - 1:
+            _, new_place = day_places[index]
+            next_ip, next_place = day_places[index + 1]
+            minutes = await self._try_compute_segment_minutes(
+                new_place, next_place, mode
+            )
+            updates.append((created, minutes))
+
+        await self.repo.update_travel_times(updates)
+
+    async def _try_compute_segment_minutes(
+        self, origin: Place, destination: Place, mode: str
+    ) -> Optional[int]:
+        """이동시간 계산을 시도하고, 외부 API(Kakao) 실패 시 담기/삭제 자체는
+        실패시키지 않고 None으로 남긴다."""
+        try:
+            if mode == "CAR":
+                route = await self.kakao_mobility_client.get_driving_route(
+                    origin.lng, origin.lat, destination.lng, destination.lat
+                )
+            else:
+                route = await self.kakao_map_client.get_walking_route(
+                    origin.lng, origin.lat, destination.lng, destination.lat
+                )
+            return round(route["duration_sec"] / 60)
+        except HTTPException:
+            return None

@@ -1,13 +1,20 @@
 from typing import Optional
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import case, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.itinerary import Itinerary
 from app.models.itinerary_place import ItineraryPlace
 from app.models.place import Place
+
+_TIME_SLOT_ORDER = case(
+    (ItineraryPlace.time_slot == "MORNING", 0),
+    (ItineraryPlace.time_slot == "LUNCH", 1),
+    (ItineraryPlace.time_slot == "EVENING", 2),
+    else_=3,
+)
 
 
 class ItineraryPlaceRepository:
@@ -123,4 +130,30 @@ class ItineraryPlaceRepository:
 
     async def delete_itinerary_place(self, itinerary_place: ItineraryPlace) -> None:
         await self.db.delete(itinerary_place)
+        await self.db.commit()
+
+    async def find_day_places_ordered(
+        self, itinerary_id: UUID, day: int
+    ) -> list[tuple[ItineraryPlace, Place]]:
+        """해당 day에 배치된 항목들을 하루 시간 순서(아침→점심→저녁, order_in_day)로
+        정렬해 반환한다. 담기/삭제 직후 인접 이웃(앞/뒤)을 찾을 때 사용."""
+        result = await self.db.execute(
+            select(ItineraryPlace, Place)
+            .join(Place, ItineraryPlace.place_id == Place.place_id)
+            .where(
+                ItineraryPlace.itinerary_id == itinerary_id,
+                ItineraryPlace.day == day,
+            )
+            .order_by(_TIME_SLOT_ORDER, ItineraryPlace.order_in_day)
+        )
+        return [(row[0], row[1]) for row in result.all()]
+
+    async def update_travel_times(
+        self, updates: list[tuple[ItineraryPlace, Optional[int]]]
+    ) -> None:
+        """여러 itinerary_place의 travel_time_to_next_min을 한 트랜잭션으로 갱신한다."""
+        if not updates:
+            return
+        for itinerary_place, minutes in updates:
+            itinerary_place.travel_time_to_next_min = minutes
         await self.db.commit()

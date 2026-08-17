@@ -8,9 +8,17 @@ from tests.unit.itinerary_plan.conftest import make_itinerary_place, make_place
 
 
 @pytest.fixture
-def service(mock_itinerary_repo, mock_kakao_map_client, mock_kakao_mobility_client):
+def service(
+    mock_itinerary_repo,
+    mock_kakao_map_client,
+    mock_kakao_mobility_client,
+    mock_itinerary_plan_repo,
+):
     return ItineraryPlanService(
-        mock_itinerary_repo, mock_kakao_map_client, mock_kakao_mobility_client
+        mock_itinerary_repo,
+        mock_kakao_map_client,
+        mock_kakao_mobility_client,
+        mock_itinerary_plan_repo,
     )
 
 
@@ -34,7 +42,12 @@ class TestGeneratePlan:
         assert exc_info.value.status_code == 404
 
     async def test_no_places_skips_generation_and_keeps_status(
-        self, service, mock_itinerary_repo, sample_itinerary, sample_user_id
+        self,
+        service,
+        mock_itinerary_repo,
+        mock_itinerary_plan_repo,
+        sample_itinerary,
+        sample_user_id,
     ):
         mock_itinerary_repo.find_by_id.return_value = sample_itinerary
         mock_itinerary_repo.find_places.return_value = []
@@ -45,12 +58,13 @@ class TestGeneratePlan:
 
         assert result.status == "DRAFT"
         assert result.schedule is None
-        mock_itinerary_repo.apply_generated_schedule.assert_not_awaited()
+        mock_itinerary_plan_repo.apply_generated_schedule.assert_not_awaited()
 
     async def test_success_uses_car_mode_and_sets_generated(
         self,
         service,
         mock_itinerary_repo,
+        mock_itinerary_plan_repo,
         mock_kakao_mobility_client,
         mock_kakao_map_client,
         sample_itinerary,
@@ -76,7 +90,9 @@ class TestGeneratePlan:
             itinerary.status = status
             return itinerary
 
-        mock_itinerary_repo.apply_generated_schedule.side_effect = apply_side_effect
+        mock_itinerary_plan_repo.apply_generated_schedule.side_effect = (
+            apply_side_effect
+        )
 
         result = await service.generate_plan(
             sample_user_id, sample_itinerary.itinerary_id
@@ -89,9 +105,9 @@ class TestGeneratePlan:
         mock_kakao_mobility_client.get_driving_route.assert_awaited_once()
         mock_kakao_map_client.get_walking_route.assert_not_awaited()
 
-        mock_itinerary_repo.apply_generated_schedule.assert_awaited_once()
+        mock_itinerary_plan_repo.apply_generated_schedule.assert_awaited_once()
         _, called_status, assignments = (
-            mock_itinerary_repo.apply_generated_schedule.await_args.args
+            mock_itinerary_plan_repo.apply_generated_schedule.await_args.args
         )
         assert called_status == "GENERATED"
         assert len(assignments) == 2
@@ -102,6 +118,7 @@ class TestGeneratePlan:
         self,
         service,
         mock_itinerary_repo,
+        mock_itinerary_plan_repo,
         mock_kakao_map_client,
         mock_kakao_mobility_client,
         sample_itinerary,
@@ -122,7 +139,7 @@ class TestGeneratePlan:
             "duration_sec": 300,
             "distance_m": 400,
         }
-        mock_itinerary_repo.apply_generated_schedule.side_effect = (
+        mock_itinerary_plan_repo.apply_generated_schedule.side_effect = (
             lambda itinerary, status, assignments: itinerary
         )
 
@@ -135,6 +152,7 @@ class TestGeneratePlan:
         self,
         service,
         mock_itinerary_repo,
+        mock_itinerary_plan_repo,
         mock_kakao_mobility_client,
         sample_itinerary,
         sample_user_id,
@@ -150,7 +168,9 @@ class TestGeneratePlan:
             itinerary.status = status
             return itinerary
 
-        mock_itinerary_repo.apply_generated_schedule.side_effect = apply_side_effect
+        mock_itinerary_plan_repo.apply_generated_schedule.side_effect = (
+            apply_side_effect
+        )
 
         result = await service.generate_plan(
             sample_user_id, sample_itinerary.itinerary_id
@@ -162,6 +182,7 @@ class TestGeneratePlan:
         self,
         service,
         mock_itinerary_repo,
+        mock_itinerary_plan_repo,
         mock_kakao_mobility_client,
         sample_itinerary,
         sample_user_id,
@@ -185,7 +206,7 @@ class TestGeneratePlan:
             await service.generate_plan(sample_user_id, sample_itinerary.itinerary_id)
 
         assert exc_info.value.status_code == 502
-        mock_itinerary_repo.apply_generated_schedule.assert_not_awaited()
+        mock_itinerary_plan_repo.apply_generated_schedule.assert_not_awaited()
 
 
 class TestSavePlan:
@@ -198,7 +219,12 @@ class TestSavePlan:
         assert exc_info.value.status_code == 404
 
     async def test_draft_status_raises_409(
-        self, service, mock_itinerary_repo, sample_itinerary, sample_user_id
+        self,
+        service,
+        mock_itinerary_repo,
+        mock_itinerary_plan_repo,
+        sample_itinerary,
+        sample_user_id,
     ):
         sample_itinerary.status = "DRAFT"
         mock_itinerary_repo.find_by_id.return_value = sample_itinerary
@@ -207,10 +233,15 @@ class TestSavePlan:
             await service.save_plan(sample_user_id, sample_itinerary.itinerary_id)
 
         assert exc_info.value.status_code == 409
-        mock_itinerary_repo.mark_saved.assert_not_awaited()
+        mock_itinerary_plan_repo.mark_saved.assert_not_awaited()
 
     async def test_generated_status_marks_saved(
-        self, service, mock_itinerary_repo, sample_itinerary, sample_user_id
+        self,
+        service,
+        mock_itinerary_repo,
+        mock_itinerary_plan_repo,
+        sample_itinerary,
+        sample_user_id,
     ):
         sample_itinerary.status = "GENERATED"
         mock_itinerary_repo.find_by_id.return_value = sample_itinerary
@@ -219,16 +250,21 @@ class TestSavePlan:
             itinerary.status = "SAVED"
             return itinerary
 
-        mock_itinerary_repo.mark_saved.side_effect = mark_saved_side_effect
+        mock_itinerary_plan_repo.mark_saved.side_effect = mark_saved_side_effect
 
         result = await service.save_plan(sample_user_id, sample_itinerary.itinerary_id)
 
         assert result.status == "SAVED"
         assert result.saved_at == sample_itinerary.updated_at
-        mock_itinerary_repo.mark_saved.assert_awaited_once_with(sample_itinerary)
+        mock_itinerary_plan_repo.mark_saved.assert_awaited_once_with(sample_itinerary)
 
     async def test_already_saved_is_idempotent(
-        self, service, mock_itinerary_repo, sample_itinerary, sample_user_id
+        self,
+        service,
+        mock_itinerary_repo,
+        mock_itinerary_plan_repo,
+        sample_itinerary,
+        sample_user_id,
     ):
         sample_itinerary.status = "SAVED"
         mock_itinerary_repo.find_by_id.return_value = sample_itinerary
@@ -236,4 +272,4 @@ class TestSavePlan:
         result = await service.save_plan(sample_user_id, sample_itinerary.itinerary_id)
 
         assert result.status == "SAVED"
-        mock_itinerary_repo.mark_saved.assert_not_awaited()
+        mock_itinerary_plan_repo.mark_saved.assert_not_awaited()

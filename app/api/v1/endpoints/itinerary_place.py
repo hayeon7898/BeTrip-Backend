@@ -4,6 +4,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.kakao_client import KakaoMapClient, KakaoMobilityClient
 from app.db.session import get_db  # 실제 프로젝트 경로에 맞게 수정 필요
 from app.repositories.itinerary_place_repository import ItineraryPlaceRepository
 from app.schemas.itinerary_place_schema import (
@@ -22,7 +23,9 @@ router = APIRouter(
 def get_itinerary_place_service(
     db: AsyncSession = Depends(get_db),
 ) -> ItineraryPlaceService:
-    return ItineraryPlaceService(ItineraryPlaceRepository(db))
+    return ItineraryPlaceService(
+        ItineraryPlaceRepository(db), KakaoMapClient(), KakaoMobilityClient()
+    )
 
 
 @router.get("/recommend", response_model=PlaceRecommendResponse)

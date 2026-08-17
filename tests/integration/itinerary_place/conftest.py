@@ -7,13 +7,33 @@ pytest-asyncio가 테스트마다 다른 이벤트 루프를 쓸 수 있어서, 
 """
 
 from datetime import date
-from uuid import uuid4
+from uuid import UUID, uuid4
 
+import pytest
 import pytest_asyncio
 
 from app.models.itinerary import Itinerary
 from app.models.place import Place
 from app.models.user import User
+
+
+@pytest.fixture
+async def signed_up_user(client):
+    """회원가입 + 로그인 후 (access_token, user_id)를 반환한다."""
+    payload = {
+        "email": f"{uuid4()}@example.com",
+        "password": "Passw0rd!",
+        "nickname": "테스터",
+    }
+    signup_res = await client.post("/api/v1/auth/signup", json=payload)
+    user_id = UUID(signup_res.json()["user_id"])
+
+    login_res = await client.post(
+        "/api/v1/auth/login",
+        json={"email": payload["email"], "password": payload["password"]},
+    )
+    access_token = login_res.json()["access_token"]
+    return access_token, user_id
 
 
 @pytest_asyncio.fixture
