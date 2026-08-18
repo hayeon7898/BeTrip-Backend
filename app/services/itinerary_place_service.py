@@ -226,9 +226,11 @@ class ItineraryPlaceService:
             ip, place = day_places[i]
             _, next_place = day_places[i + 1]
             minutes = await self._try_compute_segment_minutes(place, next_place, mode)
+            ip.travel_time_to_next_min = minutes
             travel_updates.append((ip, minutes))
         if day_places:
             last_ip, _ = day_places[-1]
+            last_ip.travel_time_to_next_min = None
             travel_updates.append((last_ip, None))  # 마지막 아이템은 다음 구간 없음
 
         start_time_updates = self._compute_start_time_updates(day_places)
