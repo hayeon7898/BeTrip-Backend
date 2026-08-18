@@ -7,8 +7,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.kakao_client import KakaoMapClient, KakaoMobilityClient
 from app.db.session import get_db  # 실제 프로젝트 경로에 맞게 수정 필요
 from app.repositories.itinerary_place_repository import ItineraryPlaceRepository
-from app.schemas.itinerary_place_schema import (
+from app.schemas.itinerary_place import (
     ItineraryPlaceCreateRequest,
+    ItineraryPlaceMoveRequest,
+    ItineraryPlaceReorderRequest,
     ItineraryPlaceResponse,
     PlaceCategory,
     PlaceRecommendResponse,
@@ -74,3 +76,34 @@ async def remove_place(
 ) -> None:
     """itinerary_place_id 기준으로 담긴 장소를 제거한다."""
     await service.remove_place_from_itinerary(itinerary_id, itinerary_place_id)
+
+
+@router.patch("/{place_id}", response_model=ItineraryPlaceResponse)
+async def move_place(
+    itinerary_id: UUID,
+    place_id: str,
+    payload: ItineraryPlaceMoveRequest,
+    service: ItineraryPlaceService = Depends(get_itinerary_place_service),
+) -> ItineraryPlaceResponse:
+    """
+    아이템을 다른 날짜/시간대로 이동.
+    order_in_day는 서버가 대상 슬롯 맨 뒤로 배치한다.
+    """
+    return await service.move_place(
+        itinerary_id, place_id, day=payload.day, time_slot=payload.time_slot
+    )
+
+
+@router.patch("/reorder", response_model=list[ItineraryPlaceResponse])
+async def reorder_places(
+    itinerary_id: UUID,
+    payload: ItineraryPlaceReorderRequest,
+    service: ItineraryPlaceService = Depends(get_itinerary_place_service),
+) -> list[ItineraryPlaceResponse]:
+    """같은 day/time_slot 안에서 order_in_day를 place_ids 순서대로 재부여."""
+    return await service.reorder_places(
+        itinerary_id,
+        day=payload.day,
+        time_slot=payload.time_slot,
+        place_ids=payload.place_ids,
+    )
