@@ -15,6 +15,11 @@ def mock_itinerary_repo():
 
 
 @pytest.fixture
+def mock_itinerary_plan_repo():
+    return AsyncMock()
+
+
+@pytest.fixture
 def mock_kakao_map_client():
     return AsyncMock()
 

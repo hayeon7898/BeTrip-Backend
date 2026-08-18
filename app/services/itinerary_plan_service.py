@@ -7,6 +7,7 @@ from app.core.kakao_client import KakaoMapClient, KakaoMobilityClient
 from app.models.itinerary import Itinerary
 from app.models.itinerary_place import ItineraryPlace
 from app.models.place import Place
+from app.repositories.itinerary_plan_repository import ItineraryPlanRepository
 from app.repositories.itinerary_repository import ItineraryRepository
 from app.schemas.itinerary import (
     ScheduleDayResponse,
@@ -29,10 +30,12 @@ class ItineraryPlanService:
         repo: ItineraryRepository,
         kakao_map_client: KakaoMapClient,
         kakao_mobility_client: KakaoMobilityClient,
+        plan_repo: ItineraryPlanRepository,
     ):
         self.repo = repo
         self.kakao_map_client = kakao_map_client
         self.kakao_mobility_client = kakao_mobility_client
+        self.plan_repo = plan_repo
 
     async def generate_plan(
         self, user_id: UUID, itinerary_id: UUID
@@ -114,7 +117,7 @@ class ItineraryPlanService:
                 )
             )
 
-        updated = await self.repo.apply_generated_schedule(
+        updated = await self.plan_repo.apply_generated_schedule(
             itinerary, "GENERATED", assignments
         )
 
@@ -134,7 +137,7 @@ class ItineraryPlanService:
             )
 
         if itinerary.status == "GENERATED":
-            itinerary = await self.repo.mark_saved(itinerary)
+            itinerary = await self.plan_repo.mark_saved(itinerary)
 
         return PlanSaveResponse(
             itinerary_id=itinerary.itinerary_id,

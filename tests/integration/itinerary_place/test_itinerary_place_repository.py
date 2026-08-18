@@ -146,3 +146,120 @@ async def test_delete_itinerary_place(db_session, sample_itinerary, sample_place
 
     found = await repo.get_itinerary_place(created.itinerary_place_id)
     assert found is None
+
+
+@pytest.mark.asyncio
+async def test_find_day_places_ordered_uses_chronological_not_alphabetical_order(
+    db_session, sample_itinerary, sample_place
+):
+    """time_slot이 문자열 컬럼이라 알파벳순이면 EVENING < LUNCH < MORNING이 되는데,
+    실제로는 MORNING -> LUNCH -> EVENING(하루 시간 순서)으로 나와야 한다."""
+    repo = ItineraryPlaceRepository(db_session)
+    evening_place = sample_place()
+    lunch_place = sample_place()
+    morning_place = sample_place()
+    db_session.add_all([evening_place, lunch_place, morning_place])
+    await db_session.commit()
+
+    # 일부러 알파벳 역순(EVENING, LUNCH, MORNING)으로 생성
+    await repo.create_itinerary_place(
+        sample_itinerary.itinerary_id,
+        evening_place.place_id,
+        day=1,
+        time_slot="EVENING",
+        order_in_day=1,
+    )
+    await repo.create_itinerary_place(
+        sample_itinerary.itinerary_id,
+        lunch_place.place_id,
+        day=1,
+        time_slot="LUNCH",
+        order_in_day=1,
+    )
+    await repo.create_itinerary_place(
+        sample_itinerary.itinerary_id,
+        morning_place.place_id,
+        day=1,
+        time_slot="MORNING",
+        order_in_day=1,
+    )
+
+    ordered = await repo.find_day_places_ordered(sample_itinerary.itinerary_id, 1)
+    ordered_place_ids = [place.place_id for _, place in ordered]
+
+    assert ordered_place_ids == [
+        morning_place.place_id,
+        lunch_place.place_id,
+        evening_place.place_id,
+    ]
+
+
+@pytest.mark.asyncio
+async def test_find_day_places_ordered_orders_by_order_in_day_within_slot(
+    db_session, sample_itinerary, sample_place
+):
+    repo = ItineraryPlaceRepository(db_session)
+    second = sample_place()
+    first = sample_place()
+    db_session.add_all([second, first])
+    await db_session.commit()
+
+    await repo.create_itinerary_place(
+        sample_itinerary.itinerary_id,
+        second.place_id,
+        day=1,
+        time_slot="MORNING",
+        order_in_day=2,
+    )
+    await repo.create_itinerary_place(
+        sample_itinerary.itinerary_id,
+        first.place_id,
+        day=1,
+        time_slot="MORNING",
+        order_in_day=1,
+    )
+
+    ordered = await repo.find_day_places_ordered(sample_itinerary.itinerary_id, 1)
+
+    assert [place.place_id for _, place in ordered] == [
+        first.place_id,
+        second.place_id,
+    ]
+
+
+@pytest.mark.asyncio
+async def test_update_day_schedule_persists_travel_and_start_times_in_one_call(
+    db_session, sample_itinerary, sample_place
+):
+    repo = ItineraryPlaceRepository(db_session)
+    place_a = sample_place()
+    place_b = sample_place()
+    db_session.add_all([place_a, place_b])
+    await db_session.commit()
+
+    ip_a = await repo.create_itinerary_place(
+        sample_itinerary.itinerary_id,
+        place_a.place_id,
+        day=1,
+        time_slot="MORNING",
+        order_in_day=1,
+    )
+    ip_b = await repo.create_itinerary_place(
+        sample_itinerary.itinerary_id,
+        place_b.place_id,
+        day=1,
+        time_slot="LUNCH",
+        order_in_day=1,
+    )
+
+    await repo.update_day_schedule(
+        [(ip_a, 12), (ip_b, None)],
+        [(ip_a, "09:00"), (ip_b, "12:00")],
+    )
+
+    refreshed_a = await repo.get_itinerary_place(ip_a.itinerary_place_id)
+    refreshed_b = await repo.get_itinerary_place(ip_b.itinerary_place_id)
+    assert refreshed_a.travel_time_to_next_min == 12
+    assert refreshed_a.start_time == "09:00"
+    assert refreshed_b.travel_time_to_next_min is None
+    assert refreshed_b.start_time == "12:00"

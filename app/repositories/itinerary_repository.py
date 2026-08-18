@@ -50,24 +50,3 @@ class ItineraryRepository:
     async def delete(self, itinerary: Itinerary) -> None:
         await self.db.delete(itinerary)
         await self.db.commit()
-
-    async def apply_generated_schedule(
-        self,
-        itinerary: Itinerary,
-        status: str,
-        assignments: list[tuple[ItineraryPlace, dict]],
-    ) -> Itinerary:
-        """일정 상태 변경 + itinerary_places 스케줄 필드 갱신을 한 트랜잭션으로 커밋."""
-        itinerary.status = status
-        for itinerary_place, fields in assignments:
-            for key, value in fields.items():
-                setattr(itinerary_place, key, value)
-        await self.db.commit()
-        await self.db.refresh(itinerary)
-        return itinerary
-
-    async def mark_saved(self, itinerary: Itinerary) -> Itinerary:
-        itinerary.status = "SAVED"
-        await self.db.commit()
-        await self.db.refresh(itinerary)
-        return itinerary
