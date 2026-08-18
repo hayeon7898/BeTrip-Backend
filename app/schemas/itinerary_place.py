@@ -88,3 +88,44 @@ class ItineraryPlaceResponse(BaseModel):
 # 장소 제거 DELETE /itineraries/{iId}/places/{itineraryPlaceId}
 # ------------------------------------------------------------------
 # 응답 바디 없이 204 No Content로 처리 (별도 스키마 불필요)
+
+
+# ------------------------------------------------------------------
+# 슬롯/일차 이동 PATCH /itineraries/{iId}/places/{placeId}
+# ------------------------------------------------------------------
+class ItineraryPlaceMoveRequest(BaseModel):
+    """아이템을 다른 날짜/시간대로 이동.
+
+    order_in_day는 서버가 이동 대상 슬롯 맨 뒤로 자동 배치하므로
+    클라이언트가 지정하지 않는다.
+    """
+
+    day: int = Field(ge=1)
+    time_slot: TimeSlot
+
+
+# ------------------------------------------------------------------
+# 같은 슬롯 내 순서 재정렬 PATCH /itineraries/{iId}/places/reorder
+# ------------------------------------------------------------------
+class ItineraryPlaceReorderRequest(BaseModel):
+    """같은 day/time_slot 안에서 order_in_day를 배열 순서대로 재부여.
+
+    place_ids는 해당 슬롯에 이미 존재하는 아이템들의 place_id를
+    원하는 순서대로 전부 나열한 것이어야 한다 (누락/추가 불가).
+    실제 일치 여부 검증은 service 레이어에서 처리.
+    """
+
+    day: int = Field(ge=1)
+    time_slot: TimeSlot
+    place_ids: list[str] = Field(min_length=1)
+
+    @model_validator(mode="after")
+    def validate_unique_place_ids(self) -> "ItineraryPlaceReorderRequest":
+        if len(self.place_ids) != len(set(self.place_ids)):
+            raise ValueError("place_ids에 중복된 값이 있습니다.")
+        return self
+
+
+# move/reorder 응답은 기존 ItineraryPlaceResponse 재사용
+# - move: 이동된 아이템 하나 -> ItineraryPlaceResponse
+# - reorder: 재정렬된 슬롯 전체 -> list[ItineraryPlaceResponse]
