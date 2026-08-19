@@ -59,10 +59,24 @@ async def test_search_by_keyword_parses_documents(monkeypatch):
     monkeypatch.setattr(httpx.AsyncClient, "get", fake_get)
 
     client = KakaoMapClient()
-    results = await client.search_by_keyword("테스트")
+    result = await client.search_by_keyword("테스트")
 
-    assert len(results) == 1
-    assert results[0].category == "CAFE"
+    assert len(result.places) == 1
+    assert result.places[0].category == "CAFE"
+    # 응답에 meta가 없으면 더 없다고 보수적으로 처리
+    assert result.is_end is True
+
+
+async def test_search_by_keyword_parses_is_end_false_from_meta(monkeypatch):
+    async def fake_get(self, url, params=None, headers=None):
+        return _fake_response({"documents": [], "meta": {"is_end": False}})
+
+    monkeypatch.setattr(httpx.AsyncClient, "get", fake_get)
+
+    client = KakaoMapClient()
+    result = await client.search_by_keyword("테스트", page=1)
+
+    assert result.is_end is False
 
 
 async def test_search_by_keyword_raises_502_on_http_error(monkeypatch):
@@ -103,9 +117,9 @@ async def test_search_by_category_parses_documents(monkeypatch):
     monkeypatch.setattr(httpx.AsyncClient, "get", fake_get)
 
     client = KakaoMapClient()
-    results = await client.search_by_category("FD6", x=127.0, y=37.5, radius=500)
+    result = await client.search_by_category("FD6", x=127.0, y=37.5, radius=500)
 
-    assert results == []
+    assert result.places == []
 
 
 async def test_get_walking_route_parses_duration_and_distance(monkeypatch):

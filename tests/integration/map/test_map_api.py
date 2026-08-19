@@ -4,7 +4,7 @@ from sqlalchemy import select
 
 from app.core.kakao_client import KakaoMapClient, KakaoMobilityClient
 from app.models.place import Place
-from app.schemas.place import KakaoPlaceRaw
+from app.schemas.place import KakaoPlaceRaw, KakaoSearchResult
 from tests.integration.map.conftest import create_place
 
 
@@ -22,7 +22,9 @@ class TestSearchAPI:
             place_url="http://place.map.kakao.com/kakao-1",
         )
         monkeypatch.setattr(
-            KakaoMapClient, "search_by_keyword", AsyncMock(return_value=[raw])
+            KakaoMapClient,
+            "search_by_keyword",
+            AsyncMock(return_value=KakaoSearchResult(places=[raw], is_end=True)),
         )
         monkeypatch.setattr(
             "app.services.place_service.fetch_og_image",
@@ -35,6 +37,7 @@ class TestSearchAPI:
         data = response.json()
         assert data["places"][0]["place_id"] == "kakao-1"
         assert data["places"][0]["thumbnail_url"] == "http://example.com/thumb.jpg"
+        assert data["has_next"] is False
 
         cached = await db_session.execute(
             select(Place).where(Place.place_id == "kakao-1")
@@ -52,7 +55,9 @@ class TestSearchAPI:
             place_url="http://place.map.kakao.com/kakao-2",
         )
         monkeypatch.setattr(
-            KakaoMapClient, "search_by_keyword", AsyncMock(return_value=[raw])
+            KakaoMapClient,
+            "search_by_keyword",
+            AsyncMock(return_value=KakaoSearchResult(places=[raw], is_end=True)),
         )
         monkeypatch.setattr(
             "app.services.place_service.fetch_og_image", AsyncMock(return_value=None)
@@ -63,6 +68,40 @@ class TestSearchAPI:
 
         detail_res = await client.get("/api/v1/map/places/kakao-2")
         assert detail_res.status_code == 200
+
+    async def test_search_with_page_param_forwards_to_kakao_and_reflects_has_next(
+        self, client, monkeypatch
+    ):
+        raw = KakaoPlaceRaw(
+            place_id="kakao-3",
+            name="협재해수욕장",
+            category="ACTIVITY",
+            address="제주시 어딘가",
+            lat=33.4,
+            lng=126.5,
+            place_url="http://place.map.kakao.com/kakao-3",
+        )
+        search_mock = AsyncMock(
+            return_value=KakaoSearchResult(places=[raw], is_end=False)
+        )
+        monkeypatch.setattr(KakaoMapClient, "search_by_keyword", search_mock)
+        monkeypatch.setattr(
+            "app.services.place_service.fetch_og_image", AsyncMock(return_value=None)
+        )
+
+        response = await client.get(
+            "/api/v1/map/search", params={"q": "협재", "page": 2}
+        )
+
+        assert response.status_code == 200
+        assert response.json()["has_next"] is True
+        assert search_mock.await_args.kwargs["page"] == 2
+
+    async def test_search_with_page_out_of_kakao_range_returns_422(self, client):
+        response = await client.get(
+            "/api/v1/map/search", params={"q": "협재", "page": 46}
+        )
+        assert response.status_code == 422
 
     async def test_search_without_q_or_category_returns_422(self, client):
         response = await client.get("/api/v1/map/search")

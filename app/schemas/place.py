@@ -36,6 +36,13 @@ class KakaoPlaceRaw(BaseModel):
     place_url: str
 
 
+class KakaoSearchResult(BaseModel):
+    """카카오 검색 API 응답 한 페이지분 (documents + meta.is_end)."""
+
+    places: list[KakaoPlaceRaw]
+    is_end: bool
+
+
 class PlaceSearchResult(BaseModel):
     """GET /map/search 응답 아이템. snake_case로만 작성 (docs/api-spec.md 원칙)."""
 
@@ -50,3 +57,4 @@ class PlaceSearchResult(BaseModel):
 
 class PlaceSearchResponse(BaseModel):
     places: list[PlaceSearchResult]
+    has_next: bool

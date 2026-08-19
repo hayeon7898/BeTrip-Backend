@@ -2,7 +2,7 @@ import httpx
 from fastapi import HTTPException, status
 
 from app.core.config import settings
-from app.schemas.place import KakaoPlaceRaw
+from app.schemas.place import KakaoPlaceRaw, KakaoSearchResult
 from app.utils.category_mapper import map_kakao_category
 
 KEYWORD_SEARCH_URL = "https://dapi.kakao.com/v2/local/search/keyword.json"
@@ -32,7 +32,7 @@ class KakaoMapClient:
         radius: int | None = None,
         rect: str | None = None,
         category_group_code: str | None = None,
-    ) -> list[KakaoPlaceRaw]:
+    ) -> KakaoSearchResult:
         params = {"query": query, "page": page, "size": size}
         if x is not None:
             params["x"] = x
@@ -55,7 +55,7 @@ class KakaoMapClient:
         rect: str | None = None,
         page: int = 1,
         size: int = 15,
-    ) -> list[KakaoPlaceRaw]:
+    ) -> KakaoSearchResult:
         """query 없이 카테고리+위치만으로 검색하는 카카오 전용 엔드포인트"""
         params = {
             "category_group_code": category_group_code,
@@ -106,7 +106,7 @@ class KakaoMapClient:
                 "distance_m": route_props["totalDistance"],
             }
 
-    async def _search(self, url: str, params: dict) -> list[KakaoPlaceRaw]:
+    async def _search(self, url: str, params: dict) -> KakaoSearchResult:
         async with httpx.AsyncClient(timeout=5.0) as client:
             try:
                 resp = await client.get(url, params=params, headers=self._headers)
@@ -123,7 +123,10 @@ class KakaoMapClient:
                 ) from e
 
             data = resp.json()
-            return [self._parse(doc) for doc in data.get("documents", [])]
+            places = [self._parse(doc) for doc in data.get("documents", [])]
+            # is_end가 없으면(예상 못한 응답 형태) 더 없다고 보수적으로 처리
+            is_end = data.get("meta", {}).get("is_end", True)
+            return KakaoSearchResult(places=places, is_end=is_end)
 
     def _parse(self, doc: dict) -> KakaoPlaceRaw:
         return KakaoPlaceRaw(

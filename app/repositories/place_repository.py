@@ -13,6 +13,15 @@ class PlaceRepository:
         result = await self.db.execute(select(Place).where(Place.place_id == place_id))
         return result.scalar_one_or_none()
 
+    async def get_by_ids(self, place_ids: list[str]) -> list[Place]:
+        """검색 결과 중 이미 캐시된 place만 골라내기 위한 배치 조회 (캐시 스킵용)."""
+        if not place_ids:
+            return []
+        result = await self.db.execute(
+            select(Place).where(Place.place_id.in_(place_ids))
+        )
+        return list(result.scalars().all())
+
     async def upsert_many(self, rows: list[dict]) -> None:
         """
         검색 결과를 places 테이블에 배치로 upsert한다.
