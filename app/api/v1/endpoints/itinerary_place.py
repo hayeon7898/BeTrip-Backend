@@ -78,6 +78,21 @@ async def remove_place(
     await service.remove_place_from_itinerary(itinerary_id, itinerary_place_id)
 
 
+@router.patch("/reorder", response_model=list[ItineraryPlaceResponse])
+async def reorder_places(
+    itinerary_id: UUID,
+    payload: ItineraryPlaceReorderRequest,
+    service: ItineraryPlaceService = Depends(get_itinerary_place_service),
+) -> list[ItineraryPlaceResponse]:
+    """같은 day/time_slot 안에서 order_in_day를 place_ids 순서대로 재부여."""
+    return await service.reorder_places(
+        itinerary_id,
+        day=payload.day,
+        time_slot=payload.time_slot,
+        place_ids=payload.place_ids,
+    )
+
+
 @router.patch("/{place_id}", response_model=ItineraryPlaceResponse)
 async def move_place(
     itinerary_id: UUID,
@@ -91,19 +106,4 @@ async def move_place(
     """
     return await service.move_place(
         itinerary_id, place_id, day=payload.day, time_slot=payload.time_slot
-    )
-
-
-@router.patch("/reorder", response_model=list[ItineraryPlaceResponse])
-async def reorder_places(
-    itinerary_id: UUID,
-    payload: ItineraryPlaceReorderRequest,
-    service: ItineraryPlaceService = Depends(get_itinerary_place_service),
-) -> list[ItineraryPlaceResponse]:
-    """같은 day/time_slot 안에서 order_in_day를 place_ids 순서대로 재부여."""
-    return await service.reorder_places(
-        itinerary_id,
-        day=payload.day,
-        time_slot=payload.time_slot,
-        place_ids=payload.place_ids,
     )
