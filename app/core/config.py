@@ -25,6 +25,16 @@ class Settings(BaseSettings):
     # --- KAKAO ---
     KAKAO_REST_API_KEY: str
 
+    # --- NAVER ---
+    NAVER_CLIENT_ID: str
+    NAVER_CLIENT_SECRET: str
+
+    # --- Gemini ---
+    GEMINI_API_KEY: str
+
+    # --- TourAPI ---
+    TOUR_API_KEY: str
+
     @property
     def cors_origins_list(self) -> list[str]:
         return [
