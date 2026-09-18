@@ -53,6 +53,7 @@ jobs:
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
       - name: SonarCloud Quality Gate
+        if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository
         uses: sonarsource/sonarqube-quality-gate-action@v1
         timeout-minutes: 5
         env:
