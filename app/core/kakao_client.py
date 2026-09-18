@@ -46,6 +46,21 @@ class KakaoMapClient:
             params["category_group_code"] = category_group_code
         return await self._search(KEYWORD_SEARCH_URL, params)
 
+    async def resolve_region_to_coord(self, region: str) -> tuple[float, float]:
+        """
+        '홍대', '강남역' 같은 지역명을 대표 좌표(x, y)로 변환한다.
+        지번/도로명 주소 검색으로는 잡히지 않는 지역/동네 이름이 많아서,
+        키워드 검색 1건의 좌표를 대표값으로 사용한다.
+        """
+        result = await self.search_by_keyword(region, page=1, size=1)
+        if not result.places:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"'{region}'에 해당하는 위치를 찾을 수 없습니다",
+            )
+        first = result.places[0]
+        return first.lng, first.lat
+
     async def search_by_category(
         self,
         category_group_code: str,
