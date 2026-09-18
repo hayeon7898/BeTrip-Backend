@@ -5,6 +5,7 @@ from fastapi import HTTPException, status
 
 from app.core.kakao_client import KakaoMapClient
 from app.core.og_preview_fetcher import fetch_og_image
+from app.core.tour_api_client import TourApiClient
 from app.repositories.place_repository import PlaceRepository
 from app.schemas.place import (
     PlaceCategory,
@@ -14,16 +15,20 @@ from app.schemas.place import (
 )
 from app.utils.category_mapper import map_to_kakao_category_group_code
 
+TOUR_CONTENT_TYPE_IDS = ["12", "14", "15", "28"]  # 관광지, 문화시설, 축제, 레포츠
+
 
 class PlaceService:
-    def __init__(self, repo: PlaceRepository, kakao_client: KakaoMapClient):
+    def __init__(
+        self,
+        repo: PlaceRepository,
+        kakao_client: KakaoMapClient,
+        tour_client: TourApiClient | None = None,
+    ):
         self.repo = repo
         self.kakao_client = kakao_client
-        # 개발용
-        # search_places 마지막 호출의 단계별 소요시간(ms).
-        # 엔드포인트에서 Server-Timing 응답 헤더로 사용한다.
+        self.tour_client = tour_client
         self.last_timing: dict[str, float] = {}
-        # 마지막 호출에서 캐시 스킵으로 og fetch를 건너뛴/실제로 호출한 건수.
         self.last_cache_stats: dict[str, int] = {}
 
     async def get_place_detail(self, place_id: str) -> PlaceDetailResponse:
@@ -156,4 +161,100 @@ class PlaceService:
                 for place, thumbnail in zip(raw_places, thumbnails, strict=True)
             ],
             has_next=has_next,
+        )
+
+    async def search_by_tags(
+        self,
+        category: PlaceCategory | None,
+        tags: list[str],
+        limit: int = 30,
+    ) -> PlaceSearchResponse:
+        places = await self.repo.find_by_tags(
+            tags=tags,
+            category=category if category else None,  # .value 제거
+            limit=limit,
+        )
+        return PlaceSearchResponse(
+            places=[
+                PlaceSearchResult(
+                    place_id=place.place_id,
+                    name=place.name,
+                    category=place.category,
+                    address=place.address,
+                    lat=place.lat,
+                    lng=place.lng,
+                    thumbnail_url=place.thumbnail_url,
+                )
+                for place in places
+            ],
+            has_next=False,
+        )
+
+    async def search_by_region_category(
+        self, region: str, category: PlaceCategory, radius: int = 1500
+    ) -> PlaceSearchResponse:
+        x, y = await self.kakao_client.resolve_region_to_coord(region)
+        return await self.search_places(
+            q=None, x=x, y=y, radius=radius, rect=None, category=category
+        )
+
+    async def search_tour_places(
+        self, region: str, radius: int = 1500
+    ) -> PlaceSearchResponse:
+        """
+        TourAPI 관광지/문화시설/축제/레포츠 검색 후 places 테이블에 캐싱.
+        place_id는 'tour_{contentid}' 형태로 카카오 place_id와 구분한다.
+        """
+        x, y = await self.kakao_client.resolve_region_to_coord(region)
+
+        all_raw = []
+        for content_type_id in TOUR_CONTENT_TYPE_IDS:
+            result = await self.tour_client.search_by_location(
+                x=x, y=y, radius=radius, content_type_id=content_type_id
+            )
+            all_raw.extend(result.places)
+
+        # place_url 보강: 카카오 키워드 검색으로 웹뷰 링크 확보 시도 (best-effort)
+        rows = []
+        for place in all_raw:
+            place_url = None
+            try:
+                kakao_match = await self.kakao_client.search_by_keyword(
+                    f"{place.name} {region}", size=1
+                )
+                if kakao_match.places:
+                    place_url = kakao_match.places[0].place_url
+            except Exception:
+                pass  # 매칭 실패해도 TourAPI 데이터 자체는 저장
+
+            rows.append(
+                {
+                    "place_id": f"tour_{place.content_id}",
+                    "name": place.name,
+                    "category": "ACTIVITY",
+                    "address": place.address,
+                    "lat": place.lat,
+                    "lng": place.lng,
+                    "place_url": place_url,
+                    "thumbnail_url": place.thumbnail_url,
+                    "source": "TOUR_API",
+                }
+            )
+
+        await self.repo.upsert_many(rows)
+
+        return PlaceSearchResponse(
+            places=[
+                PlaceSearchResult(
+                    place_id=row["place_id"],
+                    name=row["name"],
+                    category=row["category"],
+                    address=row["address"],
+                    lat=row["lat"],
+                    lng=row["lng"],
+                    thumbnail_url=row["thumbnail_url"],
+                )
+                for row in rows
+            ],
+            has_next=False,
         )

@@ -6,6 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.api.v1.router import api_router as v1_router
 from app.core.config import settings
 from app.core.og_preview_fetcher import aclose_og_fetch_client
+from app.core.scheduler import scheduler, start_scheduler
 
 OPENAPI_TAGS = [
     {"name": "auth"},
@@ -19,7 +20,9 @@ OPENAPI_TAGS = [
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    start_scheduler()
     yield
+    scheduler.shutdown()
     await aclose_og_fetch_client()
 
 

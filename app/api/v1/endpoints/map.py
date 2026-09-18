@@ -1,20 +1,20 @@
-from fastapi import APIRouter, Depends, Query, Response
+from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.kakao_client import KakaoMapClient, KakaoMobilityClient
+from app.core.tour_api_client import TourApiClient
 from app.db.session import get_db
 from app.repositories.place_repository import PlaceRepository
 from app.schemas.place import PlaceCategory, PlaceDetailResponse, PlaceSearchResponse
 from app.schemas.transit import TransitMode, TransitResponse
 from app.services.place_service import PlaceService
 from app.services.transit_service import TransitService
-from app.utils.server_timing import format_server_timing
 
 router = APIRouter(prefix="/map", tags=["map"])
 
 
 def get_place_service(db: AsyncSession = Depends(get_db)) -> PlaceService:
-    return PlaceService(PlaceRepository(db), KakaoMapClient())
+    return PlaceService(PlaceRepository(db), KakaoMapClient(), TourApiClient())
 
 
 def get_transit_service(db: AsyncSession = Depends(get_db)) -> TransitService:
@@ -44,13 +44,10 @@ async def get_place_detail(
         "- `q` 없이 `category`만 사용: 카테고리 검색. 이때는 위치가 필수 — "
         "`x`+`y`+`radius` 조합 또는 `rect` 중 하나가 없으면 422\n"
         "- 검색 결과는 자동으로 `places` 테이블에 캐시되어, 이후 "
-        "`GET /map/places/{place_id}`·`GET /map/transit`에서 바로 조회 가능\n"
-        "- `page`로 다음 페이지 조회 가능(카카오 제한 1~45). 응답의 `has_next`가 "
-        "`true`면 다음 페이지가 더 있다는 뜻"
+        "`GET /map/places/{place_id}`·`GET /map/transit`에서 바로 조회 가능"
     ),
 )
 async def search_places(
-    response: Response,
     q: str | None = Query(
         default=None, description="검색 키워드 (q 또는 category 필수)"
     ),
@@ -65,23 +62,32 @@ async def search_places(
         description="카테고리 (q 또는 category 필수, category만 쓰면 위치 필수)",
     ),
     page: int = Query(
-        default=1, ge=1, le=45, description="페이지 번호 (카카오 제한 1~45)"
+        default=1, ge=1, le=45, description="페이지 번호 (카카오 API 최대 45)"
     ),
     service: PlaceService = Depends(get_place_service),
 ):
-    result = await service.search_places(q, x, y, radius, rect, category, page)
-    # 개발용
-    # fetch/upsert 단계별 소요시간을 바로 볼 수 있게 표준 Server-Timing 헤더로 노출.
-    # og_fetch에 캐시 fit/miss도 노출
-    if service.last_timing:
-        descriptions = {}
-        if service.last_cache_stats:
-            stats = service.last_cache_stats
-            descriptions["og_fetch"] = f"hit={stats['hit']} miss={stats['miss']}"
-        response.headers["Server-Timing"] = format_server_timing(
-            service.last_timing, descriptions
-        )
-    return result
+    return await service.search_places(q, x, y, radius, rect, category, page)
+
+
+@router.get(
+    "/search/by-tags",
+    response_model=PlaceSearchResponse,
+    summary="Search Cached Places by Tags",
+    description=(
+        "이미 캐시된 places 중 취향 태그로 필터링한다. "
+        "카카오 API를 호출하지 않고 DB만 조회하므로, 먼저 `/map/search`로 "
+        "해당 지역이 캐싱되어 있어야 결과가 나온다.\n\n"
+        "태그는 여러 개 줄 수 있으며, 전달한 태그를 **모두** 가진 장소만 반환된다 "
+        "(AND 조건)."
+    ),
+)
+async def search_places_by_tags(
+    tags: list[str] = Query(..., description="필터링할 태그 목록 (예: 감성,루프탑)"),
+    category: PlaceCategory | None = Query(default=None, description="카테고리 필터"),
+    limit: int = Query(default=30, ge=1, le=100),
+    service: PlaceService = Depends(get_place_service),
+):
+    return await service.search_by_tags(category, tags, limit)
 
 
 @router.get("/transit", response_model=TransitResponse, summary="Calculate Travel Time")
