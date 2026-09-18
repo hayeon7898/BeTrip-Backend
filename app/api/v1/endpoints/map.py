@@ -61,9 +61,12 @@ async def search_places(
         default=None,
         description="카테고리 (q 또는 category 필수, category만 쓰면 위치 필수)",
     ),
+    page: int = Query(
+        default=1, ge=1, le=45, description="페이지 번호 (카카오 API 최대 45)"
+    ),
     service: PlaceService = Depends(get_place_service),
 ):
-    return await service.search_places(q, x, y, radius, rect, category)
+    return await service.search_places(q, x, y, radius, rect, category, page)
 
 
 @router.get(
