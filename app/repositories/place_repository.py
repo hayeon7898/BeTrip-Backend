@@ -1,4 +1,6 @@
-from sqlalchemy import func, select
+from datetime import datetime, timedelta
+
+from sqlalchemy import func, select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -20,6 +22,53 @@ class PlaceRepository:
         result = await self.db.execute(
             select(Place).where(Place.place_id.in_(place_ids))
         )
+        return list(result.scalars().all())
+
+    async def find_by_tags(
+        self,
+        tags: list[str],
+        category: str | None = None,
+        limit: int = 30,
+    ) -> list[Place]:
+        """
+        태그 containment(@>) 기반 조회.
+        예: tags=["감성", "데이트"] -> 두 태그를 모두 가진 장소만 반환.
+        idx_places_tags(GIN, jsonb_path_ops) 인덱스를 탄다.
+        """
+        stmt = select(Place).where(Place.tags.op("@>")(tags))
+        if category:
+            stmt = stmt.where(Place.category == category)
+        stmt = stmt.limit(limit)
+
+        result = await self.db.execute(stmt)
+        return list(result.scalars().all())
+
+    async def set_tags(self, place_id: str, tags: list[str]) -> None:
+        """
+        네이버 블로그 태그 추출 파이프라인이 사용.
+        태그 갱신과 동시에 tags_synced_at을 now()로 찍는다.
+        """
+        await self.db.execute(
+            update(Place)
+            .where(Place.place_id == place_id)
+            .values(tags=tags, tags_synced_at=func.now())
+        )
+        await self.db.commit()
+
+    async def find_stale_tags(self, days: int = 90, limit: int = 100) -> list[Place]:
+        """
+        태그가 없거나(신규 캐시) tags_synced_at이 오래된 장소를 찾아
+        비동기 워커가 재수집하도록 한다.
+        """
+        threshold = datetime.utcnow() - timedelta(days=days)
+        stmt = (
+            select(Place)
+            .where(
+                (Place.tags_synced_at.is_(None)) | (Place.tags_synced_at < threshold)
+            )
+            .limit(limit)
+        )
+        result = await self.db.execute(stmt)
         return list(result.scalars().all())
 
     async def upsert_many(self, rows: list[dict]) -> None:
