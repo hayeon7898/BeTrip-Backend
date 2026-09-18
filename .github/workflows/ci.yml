@@ -1,6 +1,6 @@
 name: CI
 on:
-  pull_request_target:    
+  pull_request:
     branches: [main, develop]
   push:
     branches: [main, develop]
@@ -26,11 +26,15 @@ jobs:
       JWT_SECRET_KEY: ci-test-secret-key
       OPENAI_API_KEY: sk-test-dummy
       KAKAO_REST_API_KEY: ci-test-dummy-key
+      NAVER_CLIENT_ID: ci-test-dummy-id
+      NAVER_CLIENT_SECRET: ci-test-dummy-secret
+      GEMINI_API_KEY: ci-test-dummy-key
+      TOUR_API_KEY: ci-test-dummy-key
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-          ref: ${{ github.event.pull_request.head.sha }}   
+          ref: ${{ github.event.pull_request.head.sha }}
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
@@ -44,6 +48,7 @@ jobs:
       - name: Run tests with coverage
         run: pytest
       - name: SonarCloud Scan
+        if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository
         uses: SonarSource/sonarqube-scan-action@v4
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
