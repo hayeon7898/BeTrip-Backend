@@ -161,6 +161,8 @@ class ConversationService:
             name=p.name,
             category=p.category,
             address=p.address,
+            lat=p.lat,
+            lng=p.lng,
             thumbnail_url=p.thumbnail_url,
             tags=getattr(p, "tags", []),
         )

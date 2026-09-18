@@ -12,6 +12,8 @@ class ChatPlaceCard(BaseModel):
     name: str
     category: str
     address: str | None
+    lat: float
+    lng: float
     thumbnail_url: str | None
     tags: list[str] = []
 
