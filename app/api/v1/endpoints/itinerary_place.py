@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.kakao_client import KakaoMapClient, KakaoMobilityClient
-from app.db.session import get_db  # 실제 프로젝트 경로에 맞게 수정 필요
+from app.db.session import get_db
 from app.repositories.itinerary_place_repository import ItineraryPlaceRepository
 from app.schemas.itinerary_place import (
     ItineraryPlaceCreateRequest,
