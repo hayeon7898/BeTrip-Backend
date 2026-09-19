@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import CheckConstraint, ForeignKey, String, Text, func
+from sqlalchemy import CheckConstraint, ForeignKey, Index, String, Text, func
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -15,6 +15,7 @@ class ConversationMessage(Base):
             "role IN ('user', 'assistant')",
             name="chk_conversation_messages_role",
         ),
+        Index("idx_conversation_messages_itinerary", "itinerary_id", "created_at"),
     )
 
     message_id: Mapped[uuid.UUID] = mapped_column(

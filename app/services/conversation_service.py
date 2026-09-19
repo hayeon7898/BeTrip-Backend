@@ -10,7 +10,7 @@ from app.services.place_service import PlaceService
 
 TAG_TAXONOMY = [tag.value for tag in PlaceTag]
 
-SYSTEM_PROMPT = f"""당신은 여행 계획을 도와주는 TripMate의 어시스턴트입니다.
+SYSTEM_PROMPT = f"""당신은 여행 계획을 도와주는 BeTrip의 어시스턴트입니다.
 
 사용 가능한 도구는 두 가지입니다:
 - search_places:
