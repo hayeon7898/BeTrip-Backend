@@ -1,6 +1,9 @@
+from datetime import datetime, timedelta, timezone
+
 import pytest
 from fastapi import HTTPException
 
+from app.core.security import hash_refresh_token
 from app.schemas.auth import LoginRequest, SignupRequest
 from app.services.auth_service import AuthService
 
@@ -81,22 +84,24 @@ class TestRefresh:
         self, mock_user_repo, mock_token_repo, sample_refresh_token
     ):
         raw_token, token_row = sample_refresh_token
-        mock_token_repo.find_valid_by_hash.return_value = token_row
+        mock_token_repo.revoke_if_active.return_value = token_row
         mock_token_repo.save.side_effect = lambda t: t
 
         service = AuthService(mock_user_repo, mock_token_repo)
         new_access_token, new_raw_refresh_token = await service.refresh(raw_token)
 
         assert new_access_token is not None
+        assert new_raw_refresh_token is not None
         assert new_raw_refresh_token != raw_token  # 새 토큰 발급 확인
-        mock_token_repo.revoke.assert_awaited_once_with(
-            token_row
+        mock_token_repo.revoke_if_active.assert_awaited_once_with(
+            hash_refresh_token(raw_token)
         )  # 기존 토큰 폐기 확인
+        mock_token_repo.save.assert_awaited_once()
 
     async def test_refresh_with_invalid_token_raises_401(
         self, mock_user_repo, mock_token_repo
     ):
-        mock_token_repo.find_valid_by_hash.return_value = None
+        mock_token_repo.revoke_if_active.return_value = None
         mock_token_repo.find_by_hash_including_revoked.return_value = None
 
         service = AuthService(mock_user_repo, mock_token_repo)
@@ -105,18 +110,36 @@ class TestRefresh:
             await service.refresh("invalid-token")
 
         assert exc_info.value.status_code == 401
+        mock_token_repo.revoke_all_for_user.assert_not_awaited()
+
+    async def test_refresh_reuse_within_grace_returns_access_only(
+        self, mock_user_repo, mock_token_repo, sample_refresh_token
+    ):
+        """동시 요청 시나리오: 방금 폐기된 토큰이면 탈취로 보지 않고
+        access token만 재발급하며, 전체 세션은 폐기하지 않아야 함"""
+        raw_token, token_row = sample_refresh_token
+        token_row.revoked_at = datetime.now(timezone.utc) - timedelta(seconds=5)
+
+        mock_token_repo.revoke_if_active.return_value = None
+        mock_token_repo.find_by_hash_including_revoked.return_value = token_row
+
+        service = AuthService(mock_user_repo, mock_token_repo)
+        access, new_raw = await service.refresh(raw_token)
+
+        assert access is not None
+        assert new_raw is None  # 새 refresh 쿠키는 발급하지 않음
+        mock_token_repo.revoke_all_for_user.assert_not_awaited()
+        mock_token_repo.save.assert_not_awaited()
 
     async def test_refresh_with_reused_revoked_token_revokes_all_sessions(
         self, mock_user_repo, mock_token_repo, sample_refresh_token
     ):
-        """탈취된 토큰 재사용 시나리오: 이미 폐기된 토큰으로 재시도하면
-        해당 유저의 모든 refresh token이 무효화되어야 함"""
+        """유예 시간 이후 폐기된 토큰을 재사용하면 탈취로 보고
+        해당 유저의 모든 refresh token을 무효화해야 함"""
         raw_token, token_row = sample_refresh_token
-        token_row.revoked_at = token_row.created_at  # 이미 폐기된 상태로 세팅
+        token_row.revoked_at = datetime.now(timezone.utc) - timedelta(minutes=5)
 
-        mock_token_repo.find_valid_by_hash.return_value = (
-            None  # 폐기됐으니 valid 조회는 실패
-        )
+        mock_token_repo.revoke_if_active.return_value = None
         mock_token_repo.find_by_hash_including_revoked.return_value = token_row
 
         service = AuthService(mock_user_repo, mock_token_repo)
@@ -126,3 +149,14 @@ class TestRefresh:
 
         assert exc_info.value.status_code == 401
         mock_token_repo.revoke_all_for_user.assert_awaited_once_with(token_row.user_id)
+
+
+class TestLogout:
+    async def test_logout_revokes_token(self, mock_user_repo, mock_token_repo):
+        service = AuthService(mock_user_repo, mock_token_repo)
+
+        await service.logout("some-raw-token")
+
+        mock_token_repo.revoke_if_active.assert_awaited_once_with(
+            hash_refresh_token("some-raw-token")
+        )

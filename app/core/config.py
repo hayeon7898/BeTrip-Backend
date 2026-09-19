@@ -15,6 +15,7 @@ class Settings(BaseSettings):
     JWT_ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
     REFRESH_TOKEN_EXPIRE_DAYS: int = 14
+    COOKIE_SECURE: bool = True  # 로컬 .env에서는 COOKIE_SECURE=false
 
     # --- API ---
     API_V1_PREFIX: str = "/api/v1"

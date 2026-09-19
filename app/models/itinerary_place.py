@@ -11,6 +11,7 @@ from sqlalchemy import (
     String,
     UniqueConstraint,
     func,
+    text,
 )
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
@@ -34,19 +35,26 @@ class ItineraryPlace(Base):
         ),
         CheckConstraint("day >= 1", name="chk_itinerary_places_day"),
         UniqueConstraint("itinerary_id", "place_id", name="uq_itinerary_places_place"),
-        UniqueConstraint(
-            "itinerary_id",
-            "day",
-            "time_slot",
-            "order_in_day",
-            name="uq_itinerary_places_slot",
-        ),
+        # 정렬 조회용 인덱스
+        # (실제 DB에 존재하므로 모델에도 선언해 autogenerate 불일치 방지)
         Index(
             "idx_itinerary_places_order",
             "itinerary_id",
             "day",
             "time_slot",
             "order_in_day",
+        ),
+        # 배치된 행(day IS NOT NULL)만 슬롯 중복을 막는 부분 유니크 인덱스.
+        # 같은 이름의 UniqueConstraint를 함께 선언하면 빈 DB에서 create_all 시
+        # DuplicateTableError가 나므로 이 Index 하나만 유지한다.
+        Index(
+            "uq_itinerary_places_slot",
+            "itinerary_id",
+            "day",
+            "time_slot",
+            "order_in_day",
+            unique=True,
+            postgresql_where=text("day IS NOT NULL"),
         ),
     )
 
