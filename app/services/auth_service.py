@@ -17,6 +17,8 @@ from app.repositories.refresh_token_repository import RefreshTokenRepository
 from app.repositories.user_repository import UserRepository
 from app.schemas.auth import LoginRequest, SignupRequest
 
+REUSE_GRACE = timedelta(seconds=30)
+
 
 class AuthService:
     def __init__(self, user_repo: UserRepository, token_repo: RefreshTokenRepository):
@@ -59,26 +61,32 @@ class AuthService:
 
         return access_token, raw_refresh_token, user
 
-    async def refresh(self, raw_refresh_token: str) -> tuple[str, str]:
+    async def refresh(self, raw_refresh_token: str) -> tuple[str, str | None]:
         token_hash = hash_refresh_token(raw_refresh_token)
-        token_row = await self.token_repo.find_valid_by_hash(token_hash)
 
-        if not token_row:
-            possibly_stolen = await self.token_repo.find_by_hash_including_revoked(
-                token_hash
-            )
-            if possibly_stolen and possibly_stolen.revoked_at is not None:
-                await self.token_repo.revoke_all_for_user(possibly_stolen.user_id)
-            raise HTTPException(
-                status.HTTP_401_UNAUTHORIZED,
-                "리프레시 토큰이 유효하지 않습니다. 다시 로그인해주세요.",
-            )
+        row = await self.token_repo.revoke_if_active(token_hash)
+        if row:
+            access = create_access_token(str(row.user_id))
+            new_raw = await self._issue_refresh_token(row.user_id)
+            return access, new_raw
 
-        await self.token_repo.revoke(token_row)
-        new_access_token = create_access_token(str(token_row.user_id))
-        new_raw_refresh_token = await self._issue_refresh_token(token_row.user_id)
+        old = await self.token_repo.find_by_hash_including_revoked(token_hash)
+        if old and old.revoked_at is not None:
+            if datetime.now(timezone.utc) - old.revoked_at <= REUSE_GRACE:
+                return create_access_token(
+                    str(old.user_id)
+                ), None  # 동시 요청: access만 재발급
+            await self.token_repo.revoke_all_for_user(
+                old.user_id
+            )  # 유예 이후 재사용만 탈취로 간주
 
-        return new_access_token, new_raw_refresh_token
+        raise HTTPException(
+            status.HTTP_401_UNAUTHORIZED,
+            "리프레시 토큰이 유효하지 않습니다. 다시 로그인해주세요.",
+        )
+
+    async def logout(self, raw_refresh_token: str) -> None:
+        await self.token_repo.revoke_if_active(hash_refresh_token(raw_refresh_token))
 
     async def _issue_refresh_token(self, user_id) -> str:
         raw_token = generate_refresh_token()

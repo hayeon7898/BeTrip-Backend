@@ -1,7 +1,7 @@
 from datetime import datetime, timezone
 from uuid import UUID
 
-from sqlalchemy import select, update
+from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.refresh_token import RefreshToken
@@ -46,3 +46,17 @@ class RefreshTokenRepository:
             .values(revoked_at=datetime.now(timezone.utc))
         )
         await self.db.commit()
+
+    async def revoke_if_active(self, token_hash: str) -> RefreshToken | None:
+        stmt = (
+            update(RefreshToken)
+            .where(
+                RefreshToken.token_hash == token_hash,
+                RefreshToken.revoked_at.is_(None),
+                RefreshToken.expires_at > func.now(),
+            )
+            .values(revoked_at=func.now())
+            .returning(RefreshToken)
+        )
+        result = await self.db.execute(stmt)  # session → db
+        return result.scalar_one_or_none()
