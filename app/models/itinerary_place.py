@@ -11,6 +11,7 @@ from sqlalchemy import (
     String,
     UniqueConstraint,
     func,
+    text,
 )
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
@@ -41,12 +42,21 @@ class ItineraryPlace(Base):
             "order_in_day",
             name="uq_itinerary_places_slot",
         ),
+        # Index(
+        #     "idx_itinerary_places_order",
+        #     "itinerary_id",
+        #     "day",
+        #     "time_slot",
+        #     "order_in_day",
+        # ),
         Index(
-            "idx_itinerary_places_order",
+            "uq_itinerary_places_slot",
             "itinerary_id",
             "day",
             "time_slot",
             "order_in_day",
+            unique=True,
+            postgresql_where=text("day IS NOT NULL"),
         ),
     )
 

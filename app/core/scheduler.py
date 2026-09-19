@@ -47,7 +47,7 @@ def start_scheduler():
     scheduler.add_job(
         sync_stale_tags_job,
         trigger="interval",
-        minutes=30,  # 확인 끝나면 minutes=30으로 되돌리기
+        hours=6,  # 확인 끝나면 minutes=30으로 되돌리기
         id="sync_stale_tags",
         replace_existing=True,
     )
