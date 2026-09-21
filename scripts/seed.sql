@@ -3,15 +3,15 @@
 -- 실행: psql -U postgres -d betrip -f scripts/seed.sql
 -- (DATABASE_URL은 .env 참고. 이미 존재하는 행은 건드리지 않음 — 여러 번 실행해도 안전)
 
--- 로그인 정보: test@example.com / test1234!
+-- 로그인 정보: openapi@example.com / 2026openapi!
 -- POST /api/v1/auth/login 으로 로그인 후 access_token을 Swagger Authorize에 넣고 테스트할 것.
 
 -- 1. 테스트 유저
 INSERT INTO users (user_id, email, password_hash, nickname, provider)
 VALUES (
     '66666666-6666-6666-6666-666666666666',
-    'test@example.com',
-    '$2b$12$Su1itqt49d5C1uAJuvhqEOREMr73i87P81EOPetqmmMkPmkKp8OYS',
+    'openapi@example.com',
+    '$2b$12$VHSadpL4ASu1G2a35hV5c.Th06XBn/RLYsFPG2vnEZROcrfqY2EpK',
     '테스트유저',
     'LOCAL'
 )
