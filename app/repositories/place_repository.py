@@ -1,3 +1,4 @@
+import math
 from datetime import datetime, timedelta
 
 from sqlalchemy import func, select, update
@@ -29,15 +30,33 @@ class PlaceRepository:
         tags: list[str],
         category: str | None = None,
         limit: int = 30,
+        center: tuple[float, float] | None = None,
+        radius_m: int | None = None,
     ) -> list[Place]:
         """
         태그 containment(@>) 기반 조회.
         예: tags=["감성", "데이트"] -> 두 태그를 모두 가진 장소만 반환.
         idx_places_tags(GIN, jsonb_path_ops) 인덱스를 탄다.
+
+        center(x=lng, y=lat)와 radius_m이 주어지면 그 주변 장소만
+        가까운 순으로 반환한다.
+        반경은 위경도 사각형(bounding box)으로 근사한다.
         """
         stmt = select(Place).where(Place.tags.op("@>")(tags))
         if category:
             stmt = stmt.where(Place.category == category)
+        if center is not None and radius_m is not None:
+            lng, lat = center
+            lng_scale = math.cos(math.radians(lat))
+            d_lat = radius_m / 111_320
+            d_lng = radius_m / (111_320 * lng_scale)
+            stmt = stmt.where(
+                Place.lat.between(lat - d_lat, lat + d_lat),
+                Place.lng.between(lng - d_lng, lng + d_lng),
+            ).order_by(
+                (Place.lat - lat) * (Place.lat - lat)
+                + (Place.lng - lng) * (Place.lng - lng) * lng_scale * lng_scale
+            )
         stmt = stmt.limit(limit)
 
         result = await self.db.execute(stmt)

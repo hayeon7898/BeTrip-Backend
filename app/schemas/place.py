@@ -53,6 +53,7 @@ class PlaceSearchResult(BaseModel):
     lat: float
     lng: float
     thumbnail_url: str | None = None
+    tags: list[str] = []
 
 
 class PlaceSearchResponse(BaseModel):

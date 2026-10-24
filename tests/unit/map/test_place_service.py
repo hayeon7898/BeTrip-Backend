@@ -3,7 +3,12 @@ from unittest.mock import AsyncMock
 import pytest
 from fastapi import HTTPException
 
-from app.schemas.place import KakaoSearchResult, PlaceDetailResponse
+from app.models.place import Place
+from app.schemas.place import (
+    KakaoSearchResult,
+    PlaceDetailResponse,
+    PlaceSearchResponse,
+)
 from app.services.place_service import PlaceService
 
 
@@ -178,3 +183,68 @@ async def test_search_places_fetches_og_image_when_not_cached(
     fetch_mock.assert_awaited_once_with(sample_kakao_place_raw.place_url)
     assert result.places[0].thumbnail_url == "https://example.com/thumb.jpg"
     assert service.last_cache_stats == {"hit": 0, "miss": 1}
+
+
+# ------------------------------------------------------------
+# search_by_region_and_tags (대화형 추천용)
+# ------------------------------------------------------------
+def _tagged_place(place_id: str, tags: list[str]) -> Place:
+    return Place(
+        place_id=place_id,
+        name="조용한카페",
+        category="CAFE",
+        address="서울 성동구 성수동",
+        lat=37.544,
+        lng=127.056,
+        place_url=f"https://place.map.kakao.com/{place_id}",
+        thumbnail_url=None,
+        tags=tags,
+    )
+
+
+@pytest.fixture
+def region_service(mock_place_repo, mock_kakao_client):
+    service = PlaceService(mock_place_repo, mock_kakao_client)
+    mock_kakao_client.resolve_region_to_coord.return_value = (127.056, 37.544)
+    service.search_places = AsyncMock(
+        return_value=PlaceSearchResponse(places=[], has_next=False)
+    )
+    return service
+
+
+async def test_search_by_region_and_tags_filters_tags_within_region(
+    region_service, mock_place_repo
+):
+    mock_place_repo.find_by_tags.return_value = [_tagged_place("c1", ["조용함"])]
+
+    result, tag_matched = await region_service.search_by_region_and_tags(
+        "성수", "CAFE", ["조용함"]
+    )
+
+    kwargs = mock_place_repo.find_by_tags.await_args.kwargs
+    assert kwargs["center"] == (127.056, 37.544)
+    assert kwargs["radius_m"] == 1500
+    assert tag_matched is True
+    assert result.places[0].tags == ["조용함"]
+
+
+async def test_search_by_region_and_tags_falls_back_when_no_tag_match(
+    region_service, mock_place_repo
+):
+    mock_place_repo.find_by_tags.return_value = []
+
+    _, tag_matched = await region_service.search_by_region_and_tags(
+        "성수", "CAFE", ["루프탑"]
+    )
+
+    assert tag_matched is False
+    region_service.search_places.assert_awaited_once()
+
+
+async def test_search_by_region_and_tags_without_tags_skips_tag_search(
+    region_service, mock_place_repo
+):
+    _, tag_matched = await region_service.search_by_region_and_tags("성수", "CAFE", [])
+
+    assert tag_matched is None
+    mock_place_repo.find_by_tags.assert_not_awaited()

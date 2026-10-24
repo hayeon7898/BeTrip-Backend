@@ -45,3 +45,4 @@ coverage.xml
 htmlcov/
 
 docs/*
+eval_results/

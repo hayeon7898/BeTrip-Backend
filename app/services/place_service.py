@@ -168,11 +168,17 @@ class PlaceService:
         category: PlaceCategory | None,
         tags: list[str],
         limit: int = 30,
+        x: float | None = None,
+        y: float | None = None,
+        radius: int | None = None,
     ) -> PlaceSearchResponse:
+        center = (x, y) if x is not None and y is not None else None
         places = await self.repo.find_by_tags(
             tags=tags,
             category=category if category else None,  # .value 제거
             limit=limit,
+            center=center,
+            radius_m=radius if center else None,
         )
         return PlaceSearchResponse(
             places=[
@@ -184,11 +190,41 @@ class PlaceService:
                     lat=place.lat,
                     lng=place.lng,
                     thumbnail_url=place.thumbnail_url,
+                    tags=place.tags or [],
                 )
                 for place in places
             ],
             has_next=False,
         )
+
+    async def search_by_region_and_tags(
+        self,
+        region: str,
+        category: PlaceCategory,
+        tags: list[str],
+        radius: int = 1500,
+    ) -> tuple[PlaceSearchResponse, bool | None]:
+        """
+        대화형 추천용 검색.
+        지역 좌표를 한 번만 구해 카카오 검색과 태그 검색에 같이 쓴다.
+
+        반환값의 두 번째 값(tag_matched):
+        - None: 태그 조건 없이 검색
+        - True: 지역 안에서 태그가 맞는 장소를 찾음
+        - False: 태그가 맞는 장소가 없어 지역 검색 결과로 대체
+        """
+        x, y = await self.kakao_client.resolve_region_to_coord(region)
+        # 카카오 검색은 결과를 places에 캐싱하므로, 태그 검색보다 먼저 실행한다.
+        region_result = await self.search_places(
+            q=None, x=x, y=y, radius=radius, rect=None, category=category
+        )
+        if not tags:
+            return region_result, None
+
+        tag_result = await self.search_by_tags(category, tags, x=x, y=y, radius=radius)
+        if tag_result.places:
+            return tag_result, True
+        return region_result, False
 
     async def search_by_region_category(
         self, region: str, category: PlaceCategory, radius: int = 1500
