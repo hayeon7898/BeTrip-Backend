@@ -1,0 +1,23 @@
+[
+  {"id": "hard-multi-tag", "group": "태그 여러 개", "query": "성수에 조용하고 사진 잘 나오는 카페", "expect": {"tool": "search_places", "region": "성수", "category": "CAFE", "tags": ["조용함", "인생샷"]}},
+  {"id": "hard-no-tag-match", "group": "목록에 없는 취향", "query": "홍대 가성비 좋은 식당", "expect": {"tool": "search_places", "region": "홍대", "category": "RESTAURANT", "tags": []}},
+  {"id": "hard-no-tag-match-2", "group": "목록에 없는 취향", "query": "강남에 콘센트 많은 카페", "expect": {"tool": "search_places", "region": "강남", "category": "CAFE", "tags": []}},
+  {"id": "hard-implicit-tag", "group": "암시적 취향", "query": "여자친구랑 갈 성수 식당", "expect": {"tool": "search_places", "region": "성수", "category": "RESTAURANT", "tags": ["데이트"]}},
+  {"id": "hard-implicit-tag-2", "group": "암시적 취향", "query": "아이랑 같이 갈 만한 강릉 카페", "expect": {"tool": "search_places", "region": "강릉", "category": "CAFE", "tags": ["가족"]}},
+  {"id": "hard-negation", "group": "부정·정정 표현", "query": "홍대인데 밥집 말고 카페로", "expect": {"tool": "search_places", "region": "홍대", "category": "CAFE", "tags": []}},
+  {"id": "hard-dessert", "group": "카테고리 경계", "query": "연남동 디저트 맛집", "expect": {"tool": "search_places", "region": "연남", "category": "CAFE", "tags": []}},
+  {"id": "hard-typo", "group": "오타·외국어", "query": "홍데 카페 추천", "expect": {"tool": "search_places", "region": "홍대", "category": "CAFE", "tags": []}},
+  {"id": "hard-english", "group": "오타·외국어", "query": "Find a quiet cafe in Seongsu", "expect": {"tool": "search_places", "region": "성수", "category": "CAFE", "tags": ["조용함"]}},
+  {"id": "hard-two-tools", "group": "도구 2개 필요", "query": "경주 관광지랑 맛집 둘 다 알려줘", "expect": {"tool": "search_tour_places", "region": "경주", "all_tools": ["search_tour_places", "search_places"]}},
+  {"id": "hard-two-tools-2", "group": "도구 2개 필요", "query": "전주 가서 볼거리 보고 카페도 갈 건데 추천해줘", "expect": {"tool": "search_tour_places", "region": "전주", "all_tools": ["search_tour_places", "search_places"]}},
+  {"id": "hard-out-of-scope", "group": "지원하지 않는 요청", "query": "강남 숙소 추천해줘", "expect": {"tool": null}},
+  {"id": "hard-out-of-scope-2", "group": "지원하지 않는 요청", "query": "내일 부산 날씨 어때?", "expect": {"tool": null}},
+  {"id": "hard-region-change", "group": "다중 턴 정정", "history": [
+      {"role": "user", "text": "홍대 카페 추천해줘"},
+      {"role": "model", "text": "홍대 카페 몇 곳을 찾아봤어요."}
+    ], "query": "아 그냥 성수로 바꿀래", "expect": {"tool": "search_places", "region": "성수", "category": "CAFE", "tags": []}},
+  {"id": "hard-category-carry", "group": "다중 턴 정정", "history": [
+      {"role": "user", "text": "강남 조용한 카페 알려줘"},
+      {"role": "model", "text": "강남의 조용한 카페를 찾아봤어요."}
+    ], "query": "음식점도 알려줘", "expect": {"tool": "search_places", "region": "강남", "category": "RESTAURANT"}}
+]
