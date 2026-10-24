@@ -78,16 +78,20 @@ async def search_places(
         "카카오 API를 호출하지 않고 DB만 조회하므로, 먼저 `/map/search`로 "
         "해당 지역이 캐싱되어 있어야 결과가 나온다.\n\n"
         "태그는 여러 개 줄 수 있으며, 전달한 태그를 **모두** 가진 장소만 반환된다 "
-        "(AND 조건)."
+        "(AND 조건).\n\n"
+        "x, y, radius를 함께 주면 해당 반경 안의 장소만 가까운 순으로 반환한다."
     ),
 )
 async def search_places_by_tags(
     tags: list[str] = Query(..., description="필터링할 태그 목록 (예: 감성,루프탑)"),
     category: PlaceCategory | None = Query(default=None, description="카테고리 필터"),
     limit: int = Query(default=30, ge=1, le=100),
+    x: float | None = Query(default=None, description="중심 경도"),
+    y: float | None = Query(default=None, description="중심 위도"),
+    radius: int | None = Query(default=None, ge=1, le=20000, description="반경(m)"),
     service: PlaceService = Depends(get_place_service),
 ):
-    return await service.search_by_tags(category, tags, limit)
+    return await service.search_by_tags(category, tags, limit, x=x, y=y, radius=radius)
 
 
 @router.get("/transit", response_model=TransitResponse, summary="Calculate Travel Time")
