@@ -55,6 +55,10 @@
 <br>
 
 ## 🐟 시스템 구조
+### 전체 구조
+<img width="550" alt="image" src="https://github.com/user-attachments/assets/59b5d3d9-621a-4808-a3a9-87d92c6c1b82" />
+
+### Backend 구조
  
 ```mermaid
 flowchart LR
