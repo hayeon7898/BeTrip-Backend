@@ -81,8 +81,11 @@ flowchart LR
     TAG -->|태그 분류| GEMINI
 ```
  
-- **Router / Service / Repository** 3계층으로 나누고 의존성 주입(`Depends`)으로 연결합니다. 서비스는 모킹한 단위 테스트로, 레포지토리는 실제 PostgreSQL 통합 테스트로 검증합니다.
-- 카카오 검색 결과는 `places` 테이블에 캐싱되고, 배치 워커가 태그가 없거나 90일이 지난 장소를 골라 태그를 채웁니다. 사용자 요청 경로에서는 LLM 분류를 호출하지 않습니다.
+1. **Router / Service / Repository** 3계층으로 나누고 의존성 주입(`Depends`)으로 연결합니다.
+    - 서비스는 모킹한 단위 테스트로,
+    - 레포지토리는 실제 PostgreSQL 통합 테스트로 검증합니다.
+2. 카카오 검색 결과는 `places` 테이블에 캐싱되고, 배치 워커가 태그가 없거나 90일이 지난 장소를 골라 태그를 채웁니다.
+   - 사용자 요청 경로에서는 LLM 분류를 호출하지 않습니다.
 <br>
 
 ## 📄 API
@@ -279,7 +282,8 @@ docker run --env-file .env -p 8000:8000 ghcr.io/hyun7931/betrip-backend:latest
 ```
  
 <br>
-## 테스트와 평가
+
+## ✅ 테스트와 평가
  
 ```bash
 pytest tests/unit            # 단위 테스트 (DB 불필요)
